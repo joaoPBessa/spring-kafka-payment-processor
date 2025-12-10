@@ -1,0 +1,16 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.joaopBessa.payments</groupId>
+    <artifactId>spring-kafka-payment-processor</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    
+    <packaging>pom</packaging> 
+
+    <modules>
+        <module>services/payment-producer-api</module>
+        <!--<module>services/transaction-validator-service</module>
+        <module>services/ledger-writer-service</module>
+        <module>common-libraries</module>-->
+    </modules>
+    
+</project>
