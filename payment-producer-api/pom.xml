@@ -80,7 +80,7 @@
 		    <scope>runtime</scope>
 		</dependency>
 		<dependency>
-	        <groupId>com.joaoPBessa.payments</groupId>
+	        <groupId>com.joaopBessa.payments</groupId>
 	        <artifactId>common-libraries</artifactId>
 	        <version>${project.version}</version>
 	    </dependency>
