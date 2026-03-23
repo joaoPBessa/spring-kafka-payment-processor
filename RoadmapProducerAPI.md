@@ -4,11 +4,11 @@
 - [ ] **Account Controller**
     - [x] Implement `POST /save` (with 201 Created & Location Header)
     - [x] Implement `PATCH /{accountNumber}/name` (Update only the account name)
-    - [ ] Implement `DELETE /{accountNumber}` (Physical deletion initially)
-    - [ ] Implement `GET /{accountNumber}` (Find by Number)
-    - [ ] Implement `GET /all` with **Pageable** and **Specification Factory** for dynamic filtering
+    - [x] Implement `DELETE /{accountNumber}` (Physical deletion initially)
+    - [x] Implement `GET /{accountNumber}` (Find by Number)
+    - [x] Implement `GET /all` with **Pageable** and **Specification Factory** for dynamic filtering
 - [ ] **Business Rules & Auditing**
-    - [ ] Implement **Soft Delete** (`active` flag or `deleted_at` column)
+    - [x] Implement **Soft Delete** (`active` flag or `deleted_at` column)
     - [ ] Create **Global Exception Handler** (`@ControllerAdvice`)
     - [ ] Customize and internationalize **Bean Validation** messages
     - [ ] Configure batch validation (return all errors at once in the JSON response)
