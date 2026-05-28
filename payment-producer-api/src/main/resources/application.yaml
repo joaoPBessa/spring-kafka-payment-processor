@@ -6,8 +6,6 @@ spring:
 
   datasource:
     url: jdbc:postgresql://localhost:5432/payments_db
-    username: payment-producer-app
-    password: K1SJdZqbkJyW^qM)
     driver-class-name: org.postgresql.Driver
     hikari:
       schema: payment
@@ -34,7 +32,5 @@ spring:
   flyway:
     enabled: true
     url: jdbc:postgresql://localhost:5432/payments_db
-    user: ${FLYWAY_DB_USER:payment-admin}
-    password: ${FLYWAY_DB_PASS:qU0+ketjd]65]q7D}
     schemas: payment
     locations: classpath:db/migration

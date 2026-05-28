@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: spring-kafka-payment-processor
+  
+  cloud:
+    vault:
+      host: localhost
+      port: 8200
+      scheme: http
+      authentication: TOKEN
+      token: root-token-local
+      kv:
+        enabled: true
+        backend: secret

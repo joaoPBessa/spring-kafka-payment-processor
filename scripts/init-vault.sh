@@ -19,6 +19,8 @@ vault secrets enable -path=secret kv-v2 || true
 echo "🔑 Seeding Postgres secrets into Vault..."
 vault kv put secret/spring-kafka-payment-processor \
   spring.datasource.username="postgres" \
-  spring.datasource.password="5@hbQqkGB<"
+  spring.datasource.password="5@hbQqkGB<" \
+  spring.flyway.user="payment-admin" \
+  spring.flyway.password="qU0+ketjd]65]q7D"
 
 echo "✅ Vault configuration completed successfully!"
