@@ -1,5 +1,9 @@
 package com.joaoPBessa.payments.producer.services;
 
+import static com.joaoPBessa.payments.producer.config.RedisCacheConfig.*;
+
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -32,6 +36,7 @@ public class AccountService {
 		return AccountResponseDTO.fromEntity(repository.save(account));
 	}
 	
+	@CacheEvict(value = ACCOUNT_NAME, key = ACCOUNT_KEY)
 	public void updateAccountName(String accountNumber, String accountName) {
 		var account = findAccoutByNumberAndActive(accountNumber, true);
 		
@@ -41,6 +46,7 @@ public class AccountService {
 	}
 	
 	@Transactional
+	@CacheEvict(value = ACCOUNT_NAME, key = ACCOUNT_KEY)
 	public void deleteAccount(String accountNumber) {
 		var linesAffected = repository.updateActiveByNumber(accountNumber, false);
 		
@@ -50,6 +56,7 @@ public class AccountService {
 		
 	}
 	
+	@Cacheable(value = ACCOUNT_NAME, key = ACCOUNT_KEY)
 	public AccountResponseDTO findByNumber(String accountNumber) {
 		return AccountResponseDTO.fromEntity(findAccoutByNumberAndActive(accountNumber, true));
 	}
