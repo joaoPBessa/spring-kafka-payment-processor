@@ -7,6 +7,10 @@ on:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
 
+env:
+  SPRING_CLOUD_VAULT_ENABLED: 'false'
+  SPRING_CLOUD_BOOTSTRAP_ENABLED: 'false'
+
 jobs:
   build:
     runs-on: ubuntu-latest
