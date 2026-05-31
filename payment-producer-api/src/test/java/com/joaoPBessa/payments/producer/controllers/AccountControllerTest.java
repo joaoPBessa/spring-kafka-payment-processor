@@ -39,7 +39,12 @@ import com.joaoPBessa.payments.producer.api.dto.response.AccountResponseDTO;
 import com.joaoPBessa.payments.producer.domain.entities.Account;
 import com.joaoPBessa.payments.producer.services.AccountService;
 
-@WebMvcTest(controllers = AccountController.class)
+@WebMvcTest(controllers = AccountController.class, properties = {
+	    "spring.cloud.vault.enabled=false",
+	    "spring.cloud.bootstrap.enabled=false",
+	    "spring.kafka.bootstrap-servers=",
+	    "spring.datasource.url=jdbc:h2:mem:testdb"
+	})
 @DisplayName("Account Controller Unit Tests")
 class AccountControllerTest {
 
