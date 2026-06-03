@@ -36,7 +36,7 @@ jobs:
         run: mvn -B clean install -DskipTests
         
       - name: Run Unit Tests
-        run: mvn -B test -Duser.country=BR -Duser.language=pt -Duser.timezone=America/Sao_Paulo
+        run: mvn -B test -e -Dsurefire.redirectTestOutputToFile=false
 
       - name: Package Final Artifacts
         run: mvn -B package -DskipTests
