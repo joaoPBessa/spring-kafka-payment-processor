@@ -20,6 +20,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,6 +61,7 @@ class AccountControllerTest {
     private AccountService accountService;
 
     @Nested
+    @TestInstance(TestInstance.Lifecycle.PER_CLASS)
     @DisplayName("POST /api/v1/accounts/")
     class CreateAccountTests {
 
@@ -122,6 +124,7 @@ class AccountControllerTest {
     }
 
     @Nested
+    @TestInstance(TestInstance.Lifecycle.PER_CLASS)
     @DisplayName("PATCH /api/v1/accounts/{accountNumber}")
     class UpdateAccountTests {
 
@@ -157,6 +160,7 @@ class AccountControllerTest {
     }
 
     @Nested
+    @TestInstance(TestInstance.Lifecycle.PER_CLASS)
     @DisplayName("DELETE /api/v1/accounts/{accountNumber}")
     class DeleteAccountTests {
 
@@ -174,6 +178,7 @@ class AccountControllerTest {
     }
 
     @Nested
+    @TestInstance(TestInstance.Lifecycle.PER_CLASS)
     @DisplayName("GET /api/v1/accounts/{accountNumber}")
     class GetAccountByNumberTests {
 
@@ -196,6 +201,7 @@ class AccountControllerTest {
     }
 
     @Nested
+    @TestInstance(TestInstance.Lifecycle.PER_CLASS)
     @DisplayName("GET /api/v1/accounts (Pageable)")
     class GetAllAccountsTests {
 
