@@ -10,6 +10,9 @@ on:
 env:
   SPRING_CLOUD_VAULT_ENABLED: 'false'
   SPRING_CLOUD_BOOTSTRAP_ENABLED: 'false'
+  TZ: 'America/Sao_Paulo'
+  LANG: 'pt_BR.UTF-8'
+  LC_ALL: 'pt_BR.UTF-8'
 
 jobs:
   build:
@@ -33,7 +36,7 @@ jobs:
         run: mvn -B clean install -DskipTests
         
       - name: Run Unit Tests
-        run: mvn -B test
+        run: mvn -B test -Duser.country=BR -Duser.language=pt -Duser.timezone=America/Sao_Paulo
 
       - name: Package Final Artifacts
         run: mvn -B package -DskipTests
