@@ -1,6 +1,5 @@
 package com.joaoPBessa.payments.producer.controllers;
 
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -75,7 +74,7 @@ class AccountControllerTest {
         try (MockedStatic<UUID> mockedUuid = Mockito.mockStatic(UUID.class)) {
             
             mockedUuid.when(UUID::randomUUID).thenReturn(fixedUuid);
-            when(accountService.save(eq(expectedAccountInput))).thenReturn(response);
+            when(accountService.save(expectedAccountInput)).thenReturn(response);
 
             mockMvc.perform(post("/api/v1/accounts/")
                     .contentType(MediaType.APPLICATION_JSON)
@@ -123,7 +122,7 @@ class AccountControllerTest {
         String accountNumber = "123456";
         var request = new UpdateAccountRequestDTO("John Doe Updated");
 
-        doNothing().when(accountService).updateAccountName(eq(accountNumber), eq("John Doe Updated"));
+        doNothing().when(accountService).updateAccountName(accountNumber, "John Doe Updated");
 
         mockMvc.perform(patch("/api/v1/accounts/{accountNumber}", accountNumber)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -202,7 +201,7 @@ class AccountControllerTest {
                 10
         );
 
-        when(accountService.findAccountsByFilter(eq(expectedFilterInput))).thenReturn(pageResponse);
+        when(accountService.findAccountsByFilter(expectedFilterInput)).thenReturn(pageResponse);
 
         mockMvc.perform(get("/api/v1/accounts")
                 .param("account_number", "123456")
