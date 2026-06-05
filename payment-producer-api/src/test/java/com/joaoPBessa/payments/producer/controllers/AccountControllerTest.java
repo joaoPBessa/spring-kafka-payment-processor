@@ -21,6 +21,10 @@ import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
+import org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration;
+import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration;
+import org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.http.MediaType;
@@ -37,7 +41,17 @@ import com.joaoPBessa.payments.producer.api.dto.response.AccountResponseDTO;
 import com.joaoPBessa.payments.producer.domain.entities.Account;
 import com.joaoPBessa.payments.producer.services.AccountService;
 
-@WebMvcTest(controllers = AccountController.class)
+@WebMvcTest(controllers = AccountController.class, properties = {
+	    "spring.cloud.vault.enabled=false",
+	    "spring.cloud.bootstrap.enabled=false",
+	    "spring.kafka.bootstrap-servers=",
+	    "spring.datasource.url=jdbc:h2:mem:testdb"
+	})
+@ImportAutoConfiguration(exclude = {
+	    KafkaAutoConfiguration.class,
+	    DataSourceAutoConfiguration.class,
+	    HibernateJpaAutoConfiguration.class
+	})
 @DisplayName("Account Controller Unit Tests")
 class AccountControllerTest {
 
