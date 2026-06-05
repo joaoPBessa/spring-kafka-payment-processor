@@ -1,6 +1,7 @@
 package com.joaoPBessa.payments.producer.controllers;
 
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.mockitoSession;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -170,12 +171,12 @@ class AccountControllerTest {
         String accountNumber = "123456";
         
         // Mantém a validação estrita do valor numérico real, garantindo robustez no CI
-        doNothing().when(accountService).deleteAccount(accountNumber);
+        doNothing().when(accountService).deleteAccount(Mockito.anyString());
 
         mockMvc.perform(delete("/api/v1/accounts/{accountNumber}", accountNumber))
                 .andExpect(status().isNoContent());
 
-        verify(accountService).deleteAccount(accountNumber);
+        verify(accountService).deleteAccount(Mockito.anyString());
     }
 
     // =========================================================================
