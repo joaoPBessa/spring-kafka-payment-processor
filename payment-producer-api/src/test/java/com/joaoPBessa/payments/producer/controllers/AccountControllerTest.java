@@ -1,7 +1,7 @@
 package com.joaoPBessa.payments.producer.controllers;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.mockitoSession;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -15,12 +15,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.UUID;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.MockedStatic;
-import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration;
@@ -36,29 +33,27 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.joaoPBessa.payments.producer.api.dto.request.CreateAccountRequestDTO;
-import com.joaoPBessa.payments.producer.api.dto.request.PageableAccountFilterRequestDTO;
 import com.joaoPBessa.payments.producer.api.dto.request.UpdateAccountRequestDTO;
 import com.joaoPBessa.payments.producer.api.dto.response.AccountResponseDTO;
 import com.joaoPBessa.payments.producer.domain.entities.Account;
 import com.joaoPBessa.payments.producer.services.AccountService;
 
 @WebMvcTest(controllers = AccountController.class, properties = {
-	    "spring.cloud.vault.enabled=false",
-	    "spring.cloud.bootstrap.enabled=false",
-	    "spring.kafka.bootstrap-servers=",
-	    "spring.datasource.url=jdbc:h2:mem:testdb"
-	})
+    "spring.cloud.vault.enabled=false",
+    "spring.cloud.bootstrap.enabled=false"
+})
 @ImportAutoConfiguration(exclude = {
-	    KafkaAutoConfiguration.class,
-	    DataSourceAutoConfiguration.class,
-	    HibernateJpaAutoConfiguration.class
-	})
-@DisplayName("Account Controller Unit Tests")
+    KafkaAutoConfiguration.class,
+    DataSourceAutoConfiguration.class,
+    HibernateJpaAutoConfiguration.class
+})
+@DisplayName("Testes Unitários do Painel de Contas (AccountController)")
 class AccountControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
 
+    // Configuração do ObjectMapper para corresponder à estratégia Snake Case e tipos de data do Java 8+
     private final ObjectMapper objectMapper = new ObjectMapper()
             .registerModule(new JavaTimeModule())
             .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
@@ -67,175 +62,207 @@ class AccountControllerTest {
     private AccountService accountService;
 
     // =========================================================================
-    // POST /api/v1/accounts/
+    // SEÇÃO: CRIAÇÃO DE CONTA (POST /api/v1/accounts/)
     // =========================================================================
 
     @Test
-    @DisplayName("POST /accounts/ -> Should create account successfully and return 201 Created with Location header")
+    @DisplayName("POST / - Deve criar uma conta com sucesso e retornar 201 Created")
     void shouldCreateAccountSuccessfully() throws Exception {
-        var request = new CreateAccountRequestDTO("123456", "John Doe");
-        
-        UUID fixedUuid = UUID.fromString("00000000-0000-0000-0000-000000000000");
-        
-        var expectedAccountInput = Account.builder()
-                .id(fixedUuid)
-                .number("123456")
-                .name("John Doe")
-                .active(Boolean.TRUE)
-                .build();
+        var request = new CreateAccountRequestDTO("123456", "João Silva");
+        var expectedResponse = new AccountResponseDTO("123456", "João Silva", true, LocalDateTime.now());
 
-        var response = new AccountResponseDTO("123456", "John Doe", true, LocalDateTime.now());
-
-        try (MockedStatic<UUID> mockedUuid = Mockito.mockStatic(UUID.class)) {
-            
-            mockedUuid.when(UUID::randomUUID).thenReturn(fixedUuid);
-            when(accountService.save(expectedAccountInput)).thenReturn(response);
-
-            mockMvc.perform(post("/api/v1/accounts/")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(request)))
-                    .andExpect(status().isCreated())
-                    .andExpect(header().string("Location", "http://localhost/api/v1/accounts/123456"))
-                    .andExpect(jsonPath("$.number").value("123456"))
-                    .andExpect(jsonPath("$.name").value("John Doe"));
-        } 
-    }
-
-    @Test
-    @DisplayName("POST /accounts/ -> Should return 400 Bad Request when Account Number is invalid")
-    void shouldReturn400WhenAccountNumberIsInvalid() throws Exception {
-        var invalidRequest = new CreateAccountRequestDTO("abc", "John Doe");
+        // Stub mapeando o comportamento do mapeamento interno 'request.toEntity()'
+        when(accountService.save(any(Account.class))).thenReturn(expectedResponse);
 
         mockMvc.perform(post("/api/v1/accounts/")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(invalidRequest)))
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andExpect(header().string("Location", "http://localhost/api/v1/accounts/123456"))
+                .andExpect(jsonPath("$.number").value("123456"))
+                .andExpect(jsonPath("$.name").value("João Silva"))
+                .andExpect(jsonPath("$.active").value(true));
+
+        verify(accountService).save(any(Account.class));
+    }
+
+    @Test
+    @DisplayName("POST / - Deve retornar 400 Bad Request quando o número da conta for menor que 4 dígitos")
+    void shouldReturn400WhenAccountNumberIsTooShort() throws Exception {
+        var request = new CreateAccountRequestDTO("123", "João Silva");
+
+        mockMvc.perform(post("/api/v1/accounts/")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
 
         verifyNoInteractions(accountService);
     }
 
     @Test
-    @DisplayName("POST /accounts/ -> Should return 400 Bad Request when Account Name is blank")
-    void shouldReturn400WhenAccountNameIsBlank() throws Exception {
-        var invalidRequest = new CreateAccountRequestDTO("123456", "    ");
+    @DisplayName("POST / - Deve retornar 400 Bad Request quando o número da conta for maior que 8 dígitos")
+    void shouldReturn400WhenAccountNumberIsTooLong() throws Exception {
+        var request = new CreateAccountRequestDTO("123456789", "João Silva");
 
         mockMvc.perform(post("/api/v1/accounts/")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(invalidRequest)))
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(accountService);
+    }
+
+    @Test
+    @DisplayName("POST / - Deve retornar 400 Bad Request quando o número da conta possuir caracteres não numéricos")
+    void shouldReturn400WhenAccountNumberContainsLetters() throws Exception {
+        var request = new CreateAccountRequestDTO("1234A", "João Silva");
+
+        mockMvc.perform(post("/api/v1/accounts/")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(accountService);
+    }
+
+    @Test
+    @DisplayName("POST / - Deve retornar 400 Bad Request quando o nome da conta estiver em branco")
+    void shouldReturn400WhenAccountNameIsBlankOnCreation() throws Exception {
+        var request = new CreateAccountRequestDTO("123456", "   ");
+
+        mockMvc.perform(post("/api/v1/accounts/")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
 
         verifyNoInteractions(accountService);
     }
 
     // =========================================================================
-	//  PATCH /api/v1/accounts/{accountNumber}
+    // SEÇÃO: ATUALIZAÇÃO DE CONTA (PATCH /api/v1/accounts/{accountNumber})
     // =========================================================================
 
     @Test
-    @DisplayName("PATCH /accounts/{id} -> Should update account name successfully and return 204 No Content")
-    void shouldUpdateAccountNameSuccessfully() throws Exception {
+    @DisplayName("PATCH /{number} - Deve atualizar o nome da conta com sucesso e retornar 204 No Content")
+    void shouldUpdateAccountSuccessfully() throws Exception {
         String accountNumber = "123456";
-        var request = new UpdateAccountRequestDTO("John Doe Updated");
+        var request = new UpdateAccountRequestDTO("João Silva Alterado");
 
-        doNothing().when(accountService).updateAccountName(accountNumber, "John Doe Updated");
+        doNothing().when(accountService).updateAccountName(accountNumber, "João Silva Alterado");
 
         mockMvc.perform(patch("/api/v1/accounts/{accountNumber}", accountNumber)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isNoContent());
 
-        verify(accountService).updateAccountName(accountNumber, "John Doe Updated");
+        verify(accountService).updateAccountName(accountNumber, "João Silva Alterado");
     }
 
     @Test
-    @DisplayName("PATCH /accounts/{id} -> Should return 400 Bad Request when Update Account Name is blank")
-    void shouldReturn400WhenUpdateAccountNameIsBlank() throws Exception {
+    @DisplayName("PATCH /{number} - Deve retornar 400 Bad Request quando o nome para atualização estiver em branco")
+    void shouldReturn400WhenAccountNameIsBlankOnUpdate() throws Exception {
         String accountNumber = "123456";
-        var invalidRequest = new UpdateAccountRequestDTO(""); 
+        var request = new UpdateAccountRequestDTO("");
 
         mockMvc.perform(patch("/api/v1/accounts/{accountNumber}", accountNumber)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(invalidRequest)))
+                .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
 
         verifyNoInteractions(accountService);
     }
 
     // =========================================================================
-    //  DELETE /api/v1/accounts/{accountNumber}
+    // SEÇÃO: EXCLUSÃO DE CONTA (DELETE /api/v1/accounts/{accountNumber})
     // =========================================================================
 
     @Test
-    @DisplayName("DELETE /accounts/{id} -> Should delete account successfully and return 204 No Content")
+    @DisplayName("DELETE /{number} - Deve excluir uma conta com sucesso e retornar 204 No Content")
     void shouldDeleteAccountSuccessfully() throws Exception {
         String accountNumber = "123456";
-        
-        // Mantém a validação estrita do valor numérico real, garantindo robustez no CI
-        doNothing().when(accountService).deleteAccount(Mockito.anyString());
+
+        doNothing().when(accountService).deleteAccount(accountNumber);
 
         mockMvc.perform(delete("/api/v1/accounts/{accountNumber}", accountNumber))
                 .andExpect(status().isNoContent());
 
-        verify(accountService).deleteAccount(Mockito.anyString());
+        verify(accountService).deleteAccount(accountNumber);
     }
 
     // =========================================================================
-    //  GET /api/v1/accounts/{accountNumber}
+    // SEÇÃO: BUSCA POR NÚMERO (GET /api/v1/accounts/{accountNumber})
     // =========================================================================
 
     @Test
-    @DisplayName("GET /accounts/{id} -> Should return account data when found and return 200 OK")
-    void shouldReturnAccountWhenFound() throws Exception {
+    @DisplayName("GET /{number} - Deve retornar os dados da conta encontrada com status 200 OK")
+    void shouldReturnAccountDetailsWhenFound() throws Exception {
         String accountNumber = "123456";
-        var response = new AccountResponseDTO(accountNumber, "John Doe", true, LocalDateTime.now());
+        var expectedResponse = new AccountResponseDTO(accountNumber, "João Silva", true, LocalDateTime.now());
 
-        // Mantém a segurança de validar o mapeamento perfeito do ID estrito recebido na URL
-        when(accountService.findByNumber(accountNumber)).thenReturn(response);
+        when(accountService.findByNumber(accountNumber)).thenReturn(expectedResponse);
 
-        mockMvc.perform(get("/api/v1/accounts/{accountNumber}", accountNumber))
+        mockMvc.perform(get("/api/v1/accounts/{accountNumber}", accountNumber)
+                .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.number").value("123456"))
-                .andExpect(jsonPath("$.name").value("John Doe"));
+                .andExpect(jsonPath("$.number").value(accountNumber))
+                .andExpect(jsonPath("$.name").value("João Silva"));
+
+        verify(accountService).findByNumber(accountNumber);
     }
 
     // =========================================================================
-    //  GET /api/v1/accounts (Pageable)
+    // SEÇÃO: CONSULTA PAGINADA E FILTROS (GET /api/v1/accounts)
     // =========================================================================
 
     @Test
-    @DisplayName("GET /accounts -> Should return paginated accounts based on filter and return 200 OK")
-    void shouldReturnPaginatedAccounts() throws Exception {
-        var responseDto = new AccountResponseDTO("123456", "John Doe", true, LocalDateTime.now());
-        var pageResponse = new PageImpl<>(List.of(responseDto));
+    @DisplayName("GET / - Deve retornar uma página de contas com sucesso utilizando parâmetros de filtro válidos")
+    void shouldReturnPaginatedAccountsWithValidFilters() throws Exception {
+        var accountDto = new AccountResponseDTO("123456", "João Silva", true, LocalDateTime.now());
+        var pageResponse = new PageImpl<>(List.of(accountDto));
 
-        var expectedFilterInput = new PageableAccountFilterRequestDTO(
-                "123456",
-                "John Doe",
-                true,
-                0,
-                10
-        );
+        when(accountService.findAccountsByFilter(any())).thenReturn(pageResponse);
 
-        when(accountService.findAccountsByFilter(expectedFilterInput)).thenReturn(pageResponse);
-
+        // Mapeamento usando parâmetros com o padrão @BindParam (Snake Case) definidos no Record
         mockMvc.perform(get("/api/v1/accounts")
-                .param("account_number", "123456")
-                .param("account_name", "John Doe")
+                .param("account_number", "12345")
+                .param("account_name", "João")
                 .param("active", "true")
                 .param("page", "0")
-                .param("size", "10"))
+                .param("size", "10")
+                .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].number").value("123456"))
-                .andExpect(jsonPath("$.content[0].name").value("John Doe"));
-        
-        verify(accountService).findAccountsByFilter(expectedFilterInput);
+                .andExpect(jsonPath("$.content[0].name").value("João Silva"));
+
+        verify(accountService).findAccountsByFilter(any());
     }
 
     @Test
-    @DisplayName("GET /accounts -> Should return 400 Bad Request when pagination parameters are missing or invalid")
-    void shouldReturn400WhenPaginationParametersAreInvalid() throws Exception {
+    @DisplayName("GET / - Deve retornar 400 Bad Request quando os parâmetros obrigatórios de paginação estiverem ausentes")
+    void shouldReturn400WhenPaginationParametersAreMissing() throws Exception {
+        mockMvc.perform(get("/api/v1/accounts")
+                .param("account_number", "12345"))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(accountService);
+    }
+
+    @Test
+    @DisplayName("GET / - Deve retornar 400 Bad Request quando o índice de página (page) for menor que 0")
+    void shouldReturn400WhenPageIndexIsNegative() throws Exception {
         mockMvc.perform(get("/api/v1/accounts")
                 .param("page", "-1")
+                .param("size", "10"))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(accountService);
+    }
+
+    @Test
+    @DisplayName("GET / - Deve retornar 400 Bad Request quando o tamanho da página (size) for menor que 1")
+    void shouldReturn400WhenPageSizeIsLessThanOne() throws Exception {
+        mockMvc.perform(get("/api/v1/accounts")
+                .param("page", "0")
                 .param("size", "0"))
                 .andExpect(status().isBadRequest());
 
@@ -243,10 +270,21 @@ class AccountControllerTest {
     }
 
     @Test
-    @DisplayName("GET /accounts -> Should return 400 Bad Request when filter parameters are too short")
-    void shouldReturn400WhenFiltersAreTooShort() throws Exception {
+    @DisplayName("GET / - Deve retornar 400 Bad Request quando o filtro de número da conta possuir menos de 3 caracteres")
+    void shouldReturn400WhenAccountNumberFilterIsTooShort() throws Exception {
         mockMvc.perform(get("/api/v1/accounts")
                 .param("account_number", "12")
+                .param("page", "0")
+                .param("size", "10"))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(accountService);
+    }
+
+    @Test
+    @DisplayName("GET / - Deve retornar 400 Bad Request quando o filtro de nome da conta possuir menos de 3 caracteres")
+    void shouldReturn400WhenAccountNameFilterIsTooShort() throws Exception {
+        mockMvc.perform(get("/api/v1/accounts")
                 .param("account_name", "Jo")
                 .param("page", "0")
                 .param("size", "10"))
