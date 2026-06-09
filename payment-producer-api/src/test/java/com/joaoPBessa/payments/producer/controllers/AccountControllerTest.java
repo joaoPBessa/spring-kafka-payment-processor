@@ -59,8 +59,8 @@ class AccountControllerTest {
     @Test
     @DisplayName("POST /api/v1/accounts/ -> Success: Should create a new account and return 201 Created")
     void shouldCreateAccountSuccessfully() throws Exception {
-        var request = new CreateAccountRequestDTO("123456", "João Pedro");
-        var expectedResponse = new AccountResponseDTO("123456", "João Pedro", true, LocalDateTime.now());
+        var request = new CreateAccountRequestDTO("123456", "Jo\\u00E3o Pedro");
+        var expectedResponse = new AccountResponseDTO("123456", "Jo\\u00E3o Pedro", true, LocalDateTime.now());
 
         when(accountService.save(any(Account.class))).thenReturn(expectedResponse);
 
@@ -70,7 +70,7 @@ class AccountControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", "http://localhost/api/v1/accounts/123456"))
                 .andExpect(jsonPath("$.number").value("123456"))
-                .andExpect(jsonPath("$.name").value("João Pedro"))
+                .andExpect(jsonPath("$.name").value("Jo\\u00E3o Pedro"))
                 .andExpect(jsonPath("$.active").value(true));
 
         verify(accountService).save(any(Account.class));
@@ -79,7 +79,7 @@ class AccountControllerTest {
     @Test
     @DisplayName("POST /api/v1/accounts/ -> Validation: Should return 400 Bad Request when account number is under 4 characters")
     void shouldReturn400WhenAccountNumberIsTooShort() throws Exception {
-        var request = new CreateAccountRequestDTO("123", "João Pedro");
+        var request = new CreateAccountRequestDTO("123", "Jo\\u00E3o Pedro");
 
         mockMvc.perform(post("/api/v1/accounts/")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -92,7 +92,7 @@ class AccountControllerTest {
     @Test
     @DisplayName("POST /api/v1/accounts/ -> Validation: Should return 400 Bad Request when account number exceeds 8 characters")
     void shouldReturn400WhenAccountNumberIsTooLong() throws Exception {
-        var request = new CreateAccountRequestDTO("123456789", "João Pedro");
+        var request = new CreateAccountRequestDTO("123456789", "Jo\\u00E3o Pedro");
 
         mockMvc.perform(post("/api/v1/accounts/")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -105,7 +105,7 @@ class AccountControllerTest {
     @Test
     @DisplayName("POST /api/v1/accounts/ -> Validation: Should return 400 Bad Request when account number contains non-numeric characters")
     void shouldReturn400WhenAccountNumberContainsLetters() throws Exception {
-        var request = new CreateAccountRequestDTO("1234A", "João Pedro");
+        var request = new CreateAccountRequestDTO("1234A", "Jo\\u00E3o Pedro");
 
         mockMvc.perform(post("/api/v1/accounts/")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -132,16 +132,16 @@ class AccountControllerTest {
     @DisplayName("PATCH /api/v1/accounts/{accountNumber} -> Success: Should update account name and return 204 No Content")
     void shouldUpdateAccountSuccessfully() throws Exception {
         String accountNumber = "123456";
-        var request = new UpdateAccountRequestDTO("João Pedro Bessa");
+        var request = new UpdateAccountRequestDTO("Jo\\u00E3o Pedro Bessa");
 
-        doNothing().when(accountService).updateAccountName(accountNumber, "João Pedro Bessa");
+        doNothing().when(accountService).updateAccountName(accountNumber, "Jo\\u00E3o Pedro Bessa");
 
         mockMvc.perform(patch("/api/v1/accounts/{accountNumber}", accountNumber)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isNoContent());
 
-        verify(accountService).updateAccountName(accountNumber, "João Pedro Bessa");
+        verify(accountService).updateAccountName(accountNumber, "Jo\\u00E3o Pedro Bessa");
     }
 
     @Test
@@ -175,7 +175,7 @@ class AccountControllerTest {
     @DisplayName("GET /api/v1/accounts/{accountNumber} -> Success: Should fetch account details and return 200 OK")
     void shouldReturnAccountDetailsWhenFound() throws Exception {
         String accountNumber = "123456";
-        var expectedResponse = new AccountResponseDTO(accountNumber, "João Pedro", true, LocalDateTime.now());
+        var expectedResponse = new AccountResponseDTO(accountNumber, "Jo\\u00E3o Pedro", true, LocalDateTime.now());
 
         when(accountService.findByNumber(accountNumber)).thenReturn(expectedResponse);
 
@@ -183,7 +183,7 @@ class AccountControllerTest {
                 .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.number").value(accountNumber))
-                .andExpect(jsonPath("$.name").value("João Pedro"));
+                .andExpect(jsonPath("$.name").value("Jo\\u00E3o Pedro"));
 
         verify(accountService).findByNumber(accountNumber);
     }
@@ -191,21 +191,21 @@ class AccountControllerTest {
     @Test
     @DisplayName("GET /api/v1/accounts -> Success: Should return page of accounts with snake_case filter parameters")
     void shouldReturnPaginatedAccountsWithValidFilters() throws Exception {
-        var accountDto = new AccountResponseDTO("123456", "João Pedro", true, LocalDateTime.now());
+        var accountDto = new AccountResponseDTO("123456", "Jo\\u00E3o Pedro", true, LocalDateTime.now());
         var pageResponse = new PageImpl<>(List.of(accountDto));
 
         when(accountService.findAccountsByFilter(any())).thenReturn(pageResponse);
 
         mockMvc.perform(get("/api/v1/accounts")
                 .param("account_number", "12345")
-                .param("account_name", "João")
+                .param("account_name", "Jo\\u00E3o")
                 .param("active", "true")
                 .param("page", "0")
                 .param("size", "10")
                 .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].number").value("123456"))
-                .andExpect(jsonPath("$.content[0].name").value("João Pedro"));
+                .andExpect(jsonPath("$.content[0].name").value("Jo\\u00E3o Pedro"));
 
         verify(accountService).findAccountsByFilter(any());
     }
