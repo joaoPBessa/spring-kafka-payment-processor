@@ -54,7 +54,7 @@ public class AccountController {
 	
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	@PatchMapping("/{accountNumber}")
-	public void updateAccount(@PathVariable String accountNumber, @RequestBody UpdateAccountRequestDTO request) {
+	public void updateAccount(@PathVariable String accountNumber, @Valid @RequestBody UpdateAccountRequestDTO request) {
 		log.info("Recieve update request to number: {}, name: {}", accountNumber, request.accountName());
 		service.updateAccountName(accountNumber, request.accountName());
 	}

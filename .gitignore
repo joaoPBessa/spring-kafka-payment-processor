@@ -32,3 +32,7 @@ Thumbs.db
 # Descomente se você tiver senhas ou chaves em arquivos locais
 # application-local.yaml
 # .env
+
+# --- ARTEFATOS DE IA (locais, não fazem parte do código do projeto) ---
+CLAUDE.md
+.claude/
