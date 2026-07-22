@@ -6,8 +6,8 @@ import com.joaopBessa.payments.common.domain.PaymentMethod;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
-import jakarta.validation.constraints.Size;
 
 public record PaymentRequestDTO(
 		@NotBlank(message = "Source account is required")
@@ -20,7 +20,7 @@ public record PaymentRequestDTO(
 	    @Positive(message = "Amount must be greater than zero")
 	    BigDecimal amount,
 
-	    @Size(min = 3, max = 3)
+	    @Pattern(regexp = "^[A-Za-z]{3}$", message = "Currency must be a 3-letter ISO 4217 code")
 	    @NotBlank(message = "Currency is required (ISO code)")
 	    String currency,
 
