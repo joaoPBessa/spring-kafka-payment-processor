@@ -1,216 +1,112 @@
-# Payment Producer API 💳
+# Payment Producer API
 
-[![Java Version](https://img.shields.io/badge/Java-17-orange)](https://www.oracle.com/java/technologies/javase/jdk17-archive-downloads.html)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen)](https://spring.io/projects/spring-boot)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-blue)](https://www.postgresql.org/)
-[![Kafka](https://img.shields.io/badge/Kafka-Distributed-lightgrey)](https://kafka.apache.org/)
+The Spring Boot service in this repository: an account-management REST API with a payments endpoint that is intentionally ahead of its Kafka integration (see [Roadmap](#roadmap)).
 
-## 📝 Overview
-The **Payment Producer API** is a high-performance microservice designed to manage customer accounts and orchestrate payment events. Built with a focus on financial consistency and scalability, it serves as the entry point for the payment processing ecosystem.
+## Tech Stack
 
-This service validates account statuses, manages balances in a dedicated PostgreSQL schema, and publishes validated payment events to **Apache Kafka** using **Avro** serialization.
+- **Runtime:** Java 21
+- **Framework:** Spring Boot 4.0.0, Spring Cloud 2025.1.1
+- **Database:** PostgreSQL 15, targeting a dedicated `payment` schema
+- **Migration:** Flyway (owned by the sibling `payment-db-migration` module)
+- **Messaging:** Apache Kafka client dependency present; no producer implemented yet
+- **Secrets:** HashiCorp Vault (Spring Cloud Vault)
+- **Caching:** Redis (Spring Data Redis)
+- **Observability:** Spring Boot Actuator, Micrometer tracing (Brave), Zipkin — dependencies are in place, but no custom metrics or dashboards are configured yet
+- **Testing:** JUnit 5/6, Mockito, AssertJ, Testcontainers (Kafka, Zipkin), H2
 
----
+## Architecture Highlights
 
-## 🛠 Tech Stack
-- **Runtime:** Java 17
-- **Framework:** Spring Boot 3.x
-- **Database:** PostgreSQL 15 (Targeting specific `payment` schema)
-- **Migration:** Flyway
-- **Messaging:** Apache Kafka with Confluent Schema Registry
-- **Security:** HashiCorp Vault (Secrets Management)
-- **Caching:** Redis
-- **Observability:** Prometheus & Grafana
-- **Testing:** JUnit 5, Mockito, and Cucumber (BDD)
+- **Dedicated schema:** the datasource targets a `payment` schema, separate from `public`.
+- **JPA auditing:** `created_at`/`updated_at` on `Account` are populated automatically via `@EnableJpaAuditing` and `@EntityListeners(AuditingEntityListener.class)` — no manual timestamp handling.
+- **Cache-aside:** account lookups are `@Cacheable`, with eviction on rename/delete.
+- **Centralized error handling:** a single `@RestControllerAdvice` maps validation, not-found, conflict, and malformed-request failures to consistent 400/404/409/500 responses.
 
----
-
-## 🏗 Architecture Highlights
-- **Schema Isolation:** Implements a dedicated `payment` schema to separate business logic from public data.
-- **Auditing:** Fully automated entity auditing (`created_at`, `updated_at`) using Spring Data JPA.
-- **RESTful Design:** Uses semantic HTTP verbs (e.g., `PATCH` for partial updates) and returns proper `Location` headers.
-- **Security-First:** Integration with Vault ensures no sensitive credentials (DB, Kafka) are stored in plain text.
-
-
-
----
-
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
-- Docker & Docker Compose
-- JDK 17
-- Maven 3.8+
+- JDK 21
+- Maven
+- Docker & Docker Compose (for local infrastructure and for the Testcontainers-backed test)
 
-### 1. Environment Setup
-The project relies on several infrastructure components. Start them using the provided `docker-compose.yml`:
+### 1. Start local infrastructure
 
 ```bash
 docker-compose up -d
 ```
 
-### 2. Database Initialization
-The project uses **Flyway** for database versioning and migration. The initialization process is split between a Docker bootstrap script and Flyway migrations.
+This starts Postgres, Redis, and Vault — **not Kafka**; there's no broker running locally yet, since the producer itself isn't implemented (see [Roadmap](#roadmap)).
 
-#### Infrastructure Setup (Automated)
-When you run `docker-compose up`, the `init-db.sql` script is executed to:
-* Create the `payments_db` database.
-* Create two distinct users: `payment-admin` (for migrations) and `payment-producer-app` (for the application).
-* Create the `payment` schema and set up proper permissions.
+> The credentials in `docker-compose.yml` are throwaway local-development values only — not meant for any real environment.
 
-#### Schema Migration
-Upon application startup, Flyway connects using the `payment-admin` credentials to execute scripts located in `src/main/resources/db/migration`.
-* **V1__create_accounts_table.sql**: Creates the `accounts` table within the `payment` schema and grants DML permissions to the application user.
+### 2. Database initialization
 
-> **Note:** To manually trigger migrations via Maven, use:
-> ```bash
-> mvn flyway:migrate -Dflyway.user=payment-admin -Dflyway.password=your_admin_password
-> ```
+Flyway owns schema versioning, split between a Docker bootstrap step and the migrations themselves:
 
----
+- **Infrastructure setup (automated):** `docker-compose up` runs `scripts/init-db.sql`, which creates the `payments_db` database, two distinct users (`payment-admin` for migrations, `payment-producer-app` for the application), and the `payment` schema with the appropriate grants.
+- **Schema migration:** on application startup, Flyway connects as `payment-admin` and runs the scripts in `payment-db-migration/src/main/resources/db/migration` (`V1__create_account_table.sql`, `V2__create_active_account_column.sql`).
 
-### 3. Running the Application
-There are two primary ways to run the service locally:
+### 3. Run the application
 
-#### Option A: Maven (Best for Development)
-Ensure your Docker infrastructure is up, then run:
 ```bash
 mvn spring-boot:run
+# or, using the module-local wrapper:
+./mvnw spring-boot:run
 ```
----
 
-## 📂 Project Structure
-The project follows a **Clean Architecture** approach, ensuring clear separation of concerns and high testability.
+## Project Structure
 
 ```text
-src/main/java/com/yourdomain/payment
-├── config                  # Infrastructure & Bean configurations (Vault, Kafka, JPA)
-│   ├── JpaConfig.java      # @EnableJpaAuditing and persistence settings
-│   ├── KafkaConfig.java    # Producer/Consumer and Avro settings
-│   └── RedisConfig.java    # Caching strategies
-├── controller              # REST Entry points (Account, Payment)
-│   └── v1                  # Versioned API controllers
-├── dto                     # Data Transfer Objects (Records)
-│   ├── request             # Input validation schemas
-│   └── response            # API output contracts
-├── entity                  # JPA Entities mapped to 'payment' schema
-├── exception               # Global Exception Handler and Custom Exceptions
-│   ├── GlobalHandler.java  # @ControllerAdvice implementation
-│   └── BusinessException.java
-├── mapper                  # MapStruct interfaces for DTO <-> Entity conversion
-├── repository              # Spring Data JPA repositories (Persistence layer)
-└── service                 # Core Business Logic & Orchestration
-    ├── impl                # Implementation of business rules
-    └── validation          # Custom validation components
-
+com/joaoPBessa/payments/producer
+├── PaymentProducerApiApplication.java
+├── api/dto/
+│   ├── request/    # CreateAccountRequestDTO, UpdateAccountRequestDTO, PageableAccountFilterRequestDTO, PaymentRequestDTO
+│   └── response/   # AccountResponseDTO, PaymentResponseDTO, ErrorResponse
+├── config/         # JPAConfiguration (@EnableJpaAuditing), RedisCacheConfig
+├── controllers/    # AccountController, PaymentController
+├── domain/entities/# Account
+├── exceptions/     # AccountNotFoundException, DuplicatedAccountException, GlobalExceptionHandler
+├── repositories/   # AccountRepository, specifications/AccountSpecification
+└── services/       # AccountService
 ```
----
 
-## 🔗 API Endpoints (Quick Reference)
+## API Endpoints
 
-The API follows RESTful principles, utilizing standard HTTP verbs and status codes. All endpoints are versioned under `/api/v1`.
+All endpoints are versioned under `/api/v1`.
 
-### 🏦 Accounts Resource
-Manage customer accounts, balances, and profiles.
+### Accounts (`/api/v1/accounts`)
 
-| Method | Endpoint | Description | Success Code | Error Codes |
+| Method | Endpoint | Description | Success | Errors |
 | :--- | :--- | :--- | :--- | :--- |
-| `POST` | `/accounts` | Register a new account. Returns `Location` header. | `201` | `400`, `409` |
-| `GET` | `/accounts` | Pageable list with Specification-based filters. | `200` | `400` |
-| `GET` | `/accounts/{number}` | Retrieve full details of a specific account. | `200` | `404` |
-| `PATCH` | `/accounts/{number}/owner` | Partially update the account holder's name. | `200` | `400`, `404` |
-| `DELETE` | `/accounts/{number}` | Deactivate an account (Soft Delete). | `204` | `404` |
+| `POST` | `/api/v1/accounts/` *(note the trailing slash)* | Create an account. Returns a `Location` header. | `201` | `400`, `409` |
+| `PATCH` | `/api/v1/accounts/{accountNumber}` | Rename the account. | `204` | `400`, `404` |
+| `DELETE` | `/api/v1/accounts/{accountNumber}` | Soft-delete the account (`active = false`). | `204` | `404` |
+| `GET` | `/api/v1/accounts/{accountNumber}` | Look up an active account. Cached. | `200` | `404` |
+| `GET` | `/api/v1/accounts` | Paginated list with `Specification`-based dynamic filtering (`account_number`, `account_name`, `active`, `page`, `size`). | `200` | `400` |
 
-### 💸 Payment Resource
-Orchestrate and produce payment events to the Kafka cluster.
+### Payments (`/api/v1/payments`)
 
-| Method | Endpoint | Description | Success Code | Error Codes |
+| Method | Endpoint | Description | Success | Errors |
 | :--- | :--- | :--- | :--- | :--- |
-| `POST` | `/payments` | Process a new payment transaction (Async). | `202` | `400`, `422` |
-| `GET` | `/payments/status/{id}` | Check the status of a processed transaction. | `200` | `404` |
+| `POST` | `/api/v1/payments` | **Stub.** Validates the request and returns an echoed response with a generated transaction code — does not yet publish to Kafka. | `202` | `400` |
 
-### 🛠 Operational & Monitoring
-Endpoints provided by **Spring Boot Actuator** for health and metrics.
+## Observability
 
-| Method | Endpoint | Description | Use Case |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/actuator/health` | Check application, DB, and Kafka health. | Liveness/Readiness probes |
+`spring-boot-starter-actuator`, Micrometer tracing (Brave), and Zipkin are on the classpath, but nothing beyond Spring Boot's defaults is configured — no custom metrics, no dashboards. Wiring these up is part of the [roadmap](#roadmap).
 
----
+## Testing
 
-## 📊 Monitoring & Observability
-This microservice is built with a "production-ready" mindset, exposing deep insights into its internal state and performance.
+- **Slice tests** (`@WebMvcTest`) for both controllers: `AccountControllerTest` (15 tests), `PaymentControllerTest` (12 tests).
+- **Integration test**: `PaymentProducerApiApplicationTests` boots the full context against Testcontainers-managed Kafka and Zipkin containers.
 
-### 🧩 Observability Stack
-We use the standard industry stack for cloud-native monitoring:
-* **Micrometer:** Instrumentation library that powers Spring Actuator.
-* **Prometheus:** Time-series database that scrapes metrics from the app.
-* **Grafana:** Visualization platform for metrics and alerts.
-* **Confluent Control Center:** Specialized UI for monitoring Kafka throughput and lag.
-
-### 📈 Available Dashboards
-Once the infrastructure is running via Docker Compose, access these URLs:
-
-| Tool | URL | Credentials | Purpose |
-| :--- | :--- | :--- | :--- |
-| **Grafana** | `http://localhost:3000` | `admin/admin` | JVM Health, Throughput, Latency |
-| **Prometheus** | `http://localhost:9090` | N/A | Raw metrics query & exploration |
-| **Control Center** | `http://localhost:9021` | N/A | Kafka Topics and Consumer Lag |
-| **Actuator** | `http://localhost:8080/actuator` | N/A | Service health and runtime info |
-
-### 🛠 Custom Business Metrics
-Beyond standard JVM metrics (CPU, Memory), we expose custom **Micrometer Counters** to track business value:
-- `payments_produced_total`: Total count of payment events sent to Kafka.
-- `accounts_created_total`: Total number of new accounts registered.
-- `payment_errors_total`: Count of failed payment attempts (validation or broker errors).
-
-
-### 🪵 Structured Logging
-Logs are formatted in **JSON** (in production profiles) to be easily ingested by ELK Stack (Elasticsearch, Logstash, Kibana) or Splunk. Each log entry includes a `traceId` and `spanId` for distributed tracing.
-
----
-
-## 🧪 Testing Strategy
-To ensure the reliability of financial transactions and account management, this project implements a multi-layered testing strategy based on the **Testing Pyramid**.
-
-### 📐 Test Categories
-
-| Layer | Tools | Focus |
-| :--- | :--- | :--- |
-| **Unit Tests** | JUnit 5, Mockito, AssertJ | Business logic, Mappers, and Service layer isolation. |
-| **Integration Tests** | Spring Context, H2/Testcontainers | Repository mapping, Database constraints, and Kafka Producers. |
-| **BDD / Acceptance** | Cucumber, RestAssured | Validating business scenarios from the user's perspective. |
-
-
-
-### ⚙️ How to Run Tests
-
-**Run all tests:**
 ```bash
-mvn test
+mvn test      # unit + slice tests
+mvn verify    # also runs the Testcontainers-backed integration test (requires Docker)
 ```
 
----
+## Roadmap
 
-## 🗺 Roadmap & Next Steps
-This project is under active development. We follow a modular evolution plan, prioritizing core stability before expanding to advanced observability and security features.
+The project's namesake feature — publishing payment events to Kafka — is the next milestone:
 
-### 🚩 Current Milestones
-- [x] **Phase 1: Foundation** - Base API, PostgreSQL Schema isolation, and JPA Auditing.
-- [x] **Phase 2: Documentation** - RESTful contract definition and comprehensive README.
-- [ ] **Phase 3: Core CRUD** - Implementation of Account Service, Patch updates, and Soft Delete.
-- [ ] **Phase 4: Resilience** - Redis Caching, Exception Handling, and Bean Validation batching.
-- [ ] **Phase 5: Messaging** - Kafka Integration with Avro Schemas and Schema Registry.
-- [ ] **Phase 6: Hardening** - HashiCorp Vault integration and Full Observability stack.
-
-### 🔍 Deep Dive
-For a detailed list of tasks, including technical debt, unit testing coverage goals, and specific implementation details for each layer, please check our dedicated roadmap file:
-
-👉 **[Detailed ROADMAP.md](./ROADMAP.md)**
-
-
-
-### 💡 Future Considerations
-- **Circuit Breaker:** Implementation of Resilience4j for Kafka publishing.
-- **Multi-Tenancy:** Expanding the schema isolation to support multiple business units.
-- **Cloud Native:** Preparation for Kubernetes deployment (Helm Charts and Resource Quotas).
+- Implement a `PaymentService` that actually publishes to Kafka from `PaymentController`.
+- Define Avro schemas and wire up Schema Registry for the payment event contract.
+- Wire up custom Micrometer metrics and dashboards on top of the observability dependencies already in place.
