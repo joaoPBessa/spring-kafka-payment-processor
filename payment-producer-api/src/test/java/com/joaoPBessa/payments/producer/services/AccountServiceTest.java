@@ -3,6 +3,7 @@ package com.joaoPBessa.payments.producer.services;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
@@ -70,8 +71,9 @@ class AccountServiceTest {
         assertThat(response.name()).isEqualTo(savedAccount.getName());
         assertThat(response.active()).isTrue();
         assertThat(response.createdAt()).isEqualTo(savedAccount.getCreatedAt());
-        verify(repository).existsByNumber(account.getNumber());
-        verify(repository).save(account);
+        verify(repository, times(1)).existsByNumber(account.getNumber());
+        verify(repository, times(1)).save(account);
+        verifyNoMoreInteractions(repository);
     }
 
     @Test
@@ -85,7 +87,7 @@ class AccountServiceTest {
                 .isInstanceOf(DuplicatedAccountException.class)
                 .hasMessage("Account number 123456 already exists");
 
-        verify(repository).existsByNumber(account.getNumber());
+        verify(repository, times(1)).existsByNumber(account.getNumber());
         verifyNoMoreInteractions(repository);
     }
 
@@ -100,8 +102,9 @@ class AccountServiceTest {
         accountService.updateAccountName(accountNumber, "João Pedro Bessa");
 
         assertThat(existingAccount.getName()).isEqualTo("João Pedro Bessa");
-        verify(repository).findByNumberAndActive(accountNumber, true);
-        verify(repository).save(existingAccount);
+        verify(repository, times(1)).findByNumberAndActive(accountNumber, true);
+        verify(repository, times(1)).save(existingAccount);
+        verifyNoMoreInteractions(repository);
     }
 
     @Test
@@ -115,7 +118,7 @@ class AccountServiceTest {
                 .isInstanceOf(AccountNotFoundException.class)
                 .hasMessage("Account 123456 not found");
 
-        verify(repository).findByNumberAndActive(accountNumber, true);
+        verify(repository, times(1)).findByNumberAndActive(accountNumber, true);
         verifyNoMoreInteractions(repository);
     }
 
@@ -128,7 +131,8 @@ class AccountServiceTest {
 
         accountService.deleteAccount(accountNumber);
 
-        verify(repository).updateActiveByNumber(accountNumber, false);
+        verify(repository, times(1)).updateActiveByNumber(accountNumber, false);
+        verifyNoMoreInteractions(repository);
     }
 
     @Test
@@ -142,7 +146,8 @@ class AccountServiceTest {
                 .isInstanceOf(AccountNotFoundException.class)
                 .hasMessage("Account 123456 not found");
 
-        verify(repository).updateActiveByNumber(accountNumber, false);
+        verify(repository, times(1)).updateActiveByNumber(accountNumber, false);
+        verifyNoMoreInteractions(repository);
     }
 
     @Test
@@ -164,7 +169,8 @@ class AccountServiceTest {
         assertThat(response.number()).isEqualTo(accountNumber);
         assertThat(response.name()).isEqualTo(account.getName());
         assertThat(response.active()).isTrue();
-        verify(repository).findByNumberAndActive(accountNumber, true);
+        verify(repository, times(1)).findByNumberAndActive(accountNumber, true);
+        verifyNoMoreInteractions(repository);
     }
 
     @Test
@@ -178,7 +184,8 @@ class AccountServiceTest {
                 .isInstanceOf(AccountNotFoundException.class)
                 .hasMessage("Account 123456 not found");
 
-        verify(repository).findByNumberAndActive(accountNumber, true);
+        verify(repository, times(1)).findByNumberAndActive(accountNumber, true);
+        verifyNoMoreInteractions(repository);
     }
 
     @Test
@@ -202,9 +209,14 @@ class AccountServiceTest {
         assertThat(result.getTotalElements()).isEqualTo(1);
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().get(0).number()).isEqualTo("123456");
+
         // The Specification is built internally as a lambda in AccountSpecification and can't be
-        // compared by equality; we only assert one was actually supplied to the repository call.
-        assertThat(specificationCaptor.getValue()).isNotNull();
+        // compared by equality up front, so it's captured via the stub above; once captured, the
+        // same instance is used here for an exact-reference verification instead of any().
+        Specification<Account> suppliedSpecification = specificationCaptor.getValue();
+        assertThat(suppliedSpecification).isNotNull();
+        verify(repository, times(1)).findAll(suppliedSpecification, expectedPageable);
+        verifyNoMoreInteractions(repository);
     }
 
 }
