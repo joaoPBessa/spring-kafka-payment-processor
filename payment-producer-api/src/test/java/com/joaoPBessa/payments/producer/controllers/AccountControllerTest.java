@@ -2,8 +2,10 @@ package com.joaoPBessa.payments.producer.controllers;
 
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -75,7 +77,8 @@ class AccountControllerTest {
                 .andExpect(jsonPath("$.name").value("João Pedro"))
                 .andExpect(jsonPath("$.active").value(true));
 
-        verify(accountService).save(argThat(requestedAccount));
+        verify(accountService, times(1)).save(argThat(requestedAccount));
+        verifyNoMoreInteractions(accountService);
     }
 
     @Test
@@ -143,7 +146,8 @@ class AccountControllerTest {
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isNoContent());
 
-        verify(accountService).updateAccountName(accountNumber, "João Pedro Bessa");
+        verify(accountService, times(1)).updateAccountName(accountNumber, "João Pedro Bessa");
+        verifyNoMoreInteractions(accountService);
     }
 
     @Test
@@ -170,7 +174,8 @@ class AccountControllerTest {
         mockMvc.perform(delete("/api/v1/accounts/{accountNumber}", accountNumber))
                 .andExpect(status().isNoContent());
 
-        verify(accountService).deleteAccount(accountNumber);
+        verify(accountService, times(1)).deleteAccount(accountNumber);
+        verifyNoMoreInteractions(accountService);
     }
 
     @Test
@@ -187,7 +192,8 @@ class AccountControllerTest {
                 .andExpect(jsonPath("$.number").value(accountNumber))
                 .andExpect(jsonPath("$.name").value("João Pedro"));
 
-        verify(accountService).findByNumber(accountNumber);
+        verify(accountService, times(1)).findByNumber(accountNumber);
+        verifyNoMoreInteractions(accountService);
     }
 
     @Test
@@ -210,7 +216,8 @@ class AccountControllerTest {
                 .andExpect(jsonPath("$.content[0].number").value("123456"))
                 .andExpect(jsonPath("$.content[0].name").value("João Pedro"));
 
-        verify(accountService).findAccountsByFilter(expectedFilter);
+        verify(accountService, times(1)).findAccountsByFilter(expectedFilter);
+        verifyNoMoreInteractions(accountService);
     }
 
     @Test
