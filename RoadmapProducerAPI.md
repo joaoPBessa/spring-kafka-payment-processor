@@ -34,9 +34,9 @@
     - [ ] Add **Kafka** and **Schema Registry** to `docker-compose.yml`
     - [ ] Configure **Confluent Control Center** for visual cluster monitoring
 - [ ] **Producer Development**
-    - [ ] Define **Avro** schemas for payment events
+    - [x] Define **Avro** schemas for payment events
     - [ ] Create `PaymentController` with balance/limit validations
-    - [ ] Implement synchronous Kafka posting with callback handling (Success/Failure)
+    - [x] Implement synchronous Kafka posting with callback handling (Success/Failure)
 
 ## 🧪 Quality & Testing
 - [ ] **Unit Testing (JUnit 5 & Mockito)**
