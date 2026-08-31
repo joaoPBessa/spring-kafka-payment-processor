@@ -15,7 +15,7 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.kafka.autoconfigure.KafkaConnectionDetails;
 import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -63,8 +63,8 @@ class PaymentPublishingIntegrationTest {
     @Autowired
     private AccountRepository accountRepository;
 
-    @Value("${spring.kafka.bootstrap-servers}")
-    private String bootstrapServers;
+    @Autowired
+    private KafkaConnectionDetails kafkaConnectionDetails;
 
     private Account createActiveAccount(String number) {
         return accountRepository.save(Account.builder()
@@ -89,7 +89,7 @@ class PaymentPublishingIntegrationTest {
         String transactionId = httpResponse.getBody().transactionCode();
 
         Properties consumerProps = new Properties();
-        consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaConnectionDetails.getConsumer().getBootstrapServers());
         consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, "payment-publishing-integration-test");
         consumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
