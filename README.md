@@ -45,7 +45,7 @@ A multi-module payment-processing backend, built to explore account management a
 | Language / Framework | Java 21, Spring Boot 4.0.0, Spring Cloud 2025.1.1 |
 | Persistence | Spring Data JPA, PostgreSQL 15, Flyway |
 | Cache | Spring Data Redis |
-| Messaging | Apache Kafka client (dependency in place, producer not yet implemented) |
+| Messaging | Apache Kafka broker running via `docker-compose.yml`; client dependency in place, producer not yet implemented |
 | Config / Secrets | Spring Cloud Vault |
 | Validation | Jakarta Bean Validation |
 | Observability | Spring Boot Actuator, Micrometer tracing (Brave), Zipkin |
@@ -59,7 +59,7 @@ Prerequisites: JDK 21, Maven, Docker (for local infrastructure and for Testconta
 git clone https://github.com/joaoPBessa/spring-kafka-payment-processor.git
 cd spring-kafka-payment-processor
 
-# Start local infrastructure: Postgres, Redis, and Vault (not Kafka — no broker runs locally yet)
+# Start local infrastructure: Postgres, Redis, Vault, and Kafka
 docker-compose up -d
 ```
 
@@ -81,7 +81,7 @@ mvn test      # unit + slice tests
 mvn verify    # also runs the Testcontainers-backed integration test (requires Docker running)
 ```
 
-Current coverage in `payment-producer-api`: 15 tests on `AccountController`, 12 on `PaymentController`, plus a full-context startup test — 28 in total.
+Current coverage in `payment-producer-api`: 15 tests on `AccountController`, 12 on `PaymentController`, 9 on `AccountService`, plus a full-context startup test — 37 in total.
 
 ## CI
 
