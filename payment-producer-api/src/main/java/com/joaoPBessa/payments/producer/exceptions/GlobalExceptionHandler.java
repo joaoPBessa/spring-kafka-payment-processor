@@ -80,4 +80,15 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(response, HttpStatus.CONFLICT);
     }
 
+	@ExceptionHandler(PaymentPublishException.class)
+	public ResponseEntity<ErrorResponse> handlePaymentPublishException(PaymentPublishException ex) {
+        ErrorResponse response = new ErrorResponse(
+                LocalDateTime.now(),
+                HttpStatus.SERVICE_UNAVAILABLE.value(),
+                "Payment could not be published to Kafka: " + ex.getMessage(),
+                null
+        );
+        return new ResponseEntity<>(response, HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
 }
