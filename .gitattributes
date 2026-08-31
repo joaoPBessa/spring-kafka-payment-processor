@@ -1,0 +1,5 @@
+# Scripts mounted into Linux containers must keep LF line endings regardless of the
+# checkout platform — CRLF breaks `sh` execution (e.g. scripts/init-vault.sh failing
+# with "line N: : not found" / "syntax error: unexpected end of file").
+*.sh text eol=lf
+scripts/*.sql text eol=lf
