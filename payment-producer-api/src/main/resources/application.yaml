@@ -37,3 +37,16 @@ spring:
 
   kafka:
     bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: io.apicurio.registry.serde.avro.AvroKafkaSerializer
+      properties:
+        apicurio.registry.url: http://localhost:8080/apis/registry/v3
+        apicurio.registry.auto-register: true
+
+app:
+  kafka:
+    topics:
+      payment-events: payment.events
+    producer:
+      send-timeout: 5s
