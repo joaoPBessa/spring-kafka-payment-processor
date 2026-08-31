@@ -16,6 +16,7 @@
         <maven.compiler.target>${java.version}</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <spring-boot.version>4.0.0</spring-boot.version>
+        <avro.version>1.12.1</avro.version>
     </properties>
 
     <modules>
@@ -23,7 +24,7 @@
         <module>payment-db-migration</module>
         <module>payment-producer-api</module>
     </modules>
-    
+
     <dependencyManagement>
 	    <dependencies>
 	        <dependency>
@@ -32,6 +33,11 @@
 	            <version>${spring-boot.version}</version>
 	            <type>pom</type>
 	            <scope>import</scope>
+	        </dependency>
+	        <dependency>
+	            <groupId>org.apache.avro</groupId>
+	            <artifactId>avro</artifactId>
+	            <version>${avro.version}</version>
 	        </dependency>
 	    </dependencies>
 	</dependencyManagement>
