@@ -1,0 +1,21 @@
+{
+  "type": "record",
+  "name": "PaymentEvent",
+  "namespace": "com.joaopBessa.payments.common.avro",
+  "doc": "Event published to Kafka by payment-producer-api when a payment request is accepted for processing.",
+  "fields": [
+    { "name": "transactionId", "type": "string",
+      "doc": "Server-generated unique identifier for this payment transaction (UUID string, same value returned to the REST client as transaction_code)." },
+    { "name": "eventTimestamp", "type": { "type": "long", "logicalType": "timestamp-millis" },
+      "doc": "UTC instant the event was created, in epoch milliseconds." },
+    { "name": "sourceAccount", "type": "string" },
+    { "name": "targetAccount", "type": "string" },
+    { "name": "amount", "type": { "type": "bytes", "logicalType": "decimal", "precision": 19, "scale": 2 },
+      "doc": "Payment amount as fixed-point decimal (2 places), mirrors a typical NUMERIC(19,2) money column." },
+    { "name": "currency", "type": "string", "doc": "ISO 4217 3-letter code, normalized to uppercase before publishing." },
+    { "name": "paymentMethod", "type": {
+        "type": "enum", "name": "PaymentMethod",
+        "symbols": ["CREDIT_CARD", "DEBIT_CARD", "PIX", "BANK_TRANSFER", "CRYPTO"],
+        "doc": "Mirrors com.joaopBessa.payments.common.domain.PaymentMethod's symbols. Kept as a distinct Avro-generated type since Jackson annotations don't cross the wire boundary — the two enums must be kept in sync by hand if either changes." } }
+  ]
+}

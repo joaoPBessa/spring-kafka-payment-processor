@@ -36,3 +36,10 @@ Thumbs.db
 # --- ARTEFATOS DE IA (locais, não fazem parte do código do projeto) ---
 CLAUDE.md
 .claude/
+
+# --- AVRO GENERATED SOURCES ---
+# Only .avsc schema files are committed. Generated Java classes are build
+# output — already covered by target/ above, listed explicitly here so the
+# intent is documented — and must be regenerated locally (or in CI) via
+# `mvn generate-sources`, never committed.
+**/generated-sources/

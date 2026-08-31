@@ -1,6 +1,6 @@
 # Payment Producer API
 
-The Spring Boot service in this repository: an account-management REST API with a payments endpoint that is intentionally ahead of its Kafka integration (see [Roadmap](#roadmap)).
+The Spring Boot service in this repository: an account-management REST API and an Avro-serialized Kafka payment-event publisher.
 
 ## Tech Stack
 
@@ -8,7 +8,7 @@ The Spring Boot service in this repository: an account-management REST API with 
 - **Framework:** Spring Boot 4.0.0, Spring Cloud 2025.1.1
 - **Database:** PostgreSQL 15, targeting a dedicated `payment` schema
 - **Migration:** Flyway (owned by the sibling `payment-db-migration` module)
-- **Messaging:** Apache Kafka broker provisioned via `docker-compose.yml`; client dependency present, no producer implemented yet
+- **Messaging:** Apache Kafka broker + Apicurio Registry (Avro), both provisioned via `docker-compose.yml`; synchronous producer in `PaymentService`
 - **Secrets:** HashiCorp Vault (Spring Cloud Vault)
 - **Caching:** Redis (Spring Data Redis)
 - **Observability:** Spring Boot Actuator, Micrometer tracing (Brave), Zipkin — dependencies are in place, but no custom metrics or dashboards are configured yet
@@ -18,8 +18,9 @@ The Spring Boot service in this repository: an account-management REST API with 
 
 - **Dedicated schema:** the datasource targets a `payment` schema, separate from `public`.
 - **JPA auditing:** `created_at`/`updated_at` on `Account` are populated automatically via `@EnableJpaAuditing` and `@EntityListeners(AuditingEntityListener.class)` — no manual timestamp handling.
-- **Cache-aside:** account lookups are `@Cacheable`, with eviction on rename/delete.
-- **Centralized error handling:** a single `@RestControllerAdvice` maps validation, not-found, conflict, and malformed-request failures to consistent 400/404/409/500 responses.
+- **Cache-aside:** account lookups are `@Cacheable`, with eviction on rename/delete — also reused by `PaymentService` to validate that both accounts on a payment exist before publishing anything.
+- **Schema-governed publishing:** `PaymentService` builds an Avro-generated `PaymentEvent` and publishes it synchronously via a typed `KafkaTemplate<String, PaymentEvent>`, so only schema-conformant events can ever reach the topic.
+- **Centralized error handling:** a single `@RestControllerAdvice` maps validation, not-found, conflict, malformed-request, and publish-failure cases to consistent 400/404/409/503/500 responses.
 
 ## Getting Started
 
@@ -34,7 +35,7 @@ The Spring Boot service in this repository: an account-management REST API with 
 docker-compose up -d
 ```
 
-This starts Postgres, Redis, Vault, and Kafka. The broker comes up empty — no topics exist yet, since the producer itself isn't implemented (see [Roadmap](#roadmap)).
+This starts Postgres, Redis, Vault, Kafka, and Apicurio Registry (in-memory, non-persistent). The broker comes up with no topics pre-created — `payment.events` is created on first publish (`auto.create.topics.enable`, the broker's default).
 
 > The credentials in `docker-compose.yml` are throwaway local-development values only — not meant for any real environment.
 
@@ -61,12 +62,12 @@ com/joaoPBessa/payments/producer
 ├── api/dto/
 │   ├── request/    # CreateAccountRequestDTO, UpdateAccountRequestDTO, PageableAccountFilterRequestDTO, PaymentRequestDTO
 │   └── response/   # AccountResponseDTO, PaymentResponseDTO, ErrorResponse
-├── config/         # JPAConfiguration (@EnableJpaAuditing), RedisCacheConfig
+├── config/         # JPAConfiguration (@EnableJpaAuditing), RedisCacheConfig, KafkaProducerConfig, KafkaProducerProperties
 ├── controllers/    # AccountController, PaymentController
 ├── domain/entities/# Account
-├── exceptions/     # AccountNotFoundException, DuplicatedAccountException, GlobalExceptionHandler
+├── exceptions/     # AccountNotFoundException, DuplicatedAccountException, PaymentPublishException, GlobalExceptionHandler
 ├── repositories/   # AccountRepository, specifications/AccountSpecification
-└── services/       # AccountService
+└── services/       # AccountService, PaymentService
 ```
 
 ## API Endpoints
@@ -87,7 +88,7 @@ All endpoints are versioned under `/api/v1`.
 
 | Method | Endpoint | Description | Success | Errors |
 | :--- | :--- | :--- | :--- | :--- |
-| `POST` | `/api/v1/payments` | **Stub.** Validates the request and returns an echoed response with a generated transaction code — does not yet publish to Kafka. | `202` | `400` |
+| `POST` | `/api/v1/payments` | Validates the request, checks both accounts exist (cached), and publishes an Avro-encoded event to Kafka. Returns a generated transaction code. | `202` | `400`, `404`, `503` |
 
 ## Observability
 
@@ -95,9 +96,9 @@ All endpoints are versioned under `/api/v1`.
 
 ## Testing
 
-- **Slice tests** (`@WebMvcTest`) for both controllers: `AccountControllerTest` (15 tests), `PaymentControllerTest` (12 tests).
-- **Unit tests**: `AccountServiceTest` (9 tests, plain Mockito — no Spring context).
-- **Integration test**: `PaymentProducerApiApplicationTests` boots the full context against Testcontainers-managed Kafka and Zipkin containers.
+- **Slice tests** (`@WebMvcTest`) for both controllers: `AccountControllerTest` (15 tests), `PaymentControllerTest` (14 tests).
+- **Unit tests**: `AccountServiceTest` (9 tests), `PaymentServiceTest` (5 tests) — plain Mockito, no Spring context.
+- **Integration tests**: `PaymentProducerApiApplicationTests` boots the full context against Testcontainers-managed Kafka and Zipkin containers; `PaymentPublishingIntegrationTest` (2 tests) publishes over real HTTP and confirms the exact Avro event round-trips through a real Kafka broker and Apicurio Registry.
 
 ```bash
 mvn test      # unit + slice tests
@@ -106,8 +107,5 @@ mvn verify    # also runs the Testcontainers-backed integration test (requires D
 
 ## Roadmap
 
-The project's namesake feature — publishing payment events to Kafka — is the next milestone:
-
-- Implement a `PaymentService` that actually publishes to Kafka from `PaymentController`.
-- Define Avro schemas and wire up Schema Registry for the payment event contract.
 - Wire up custom Micrometer metrics and dashboards on top of the observability dependencies already in place.
+- `TestPaymentProducerApiApplication`'s Apicurio Testcontainers bean has no `@ServiceConnection` (Spring Boot ships no `ConnectionDetails` factory for Apicurio), so its dynamic port isn't auto-wired for local dev — `docker-compose.yml`'s fixed port remains the primary local path.

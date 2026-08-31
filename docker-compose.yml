@@ -93,6 +93,22 @@ services:
     networks:
       - payment-network
 
+  apicurio:
+    image: apicurio/apicurio-registry:3.3.2
+    container_name: payment-apicurio
+    ports:
+      - "8080:8080"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/apis/registry/v3/system/info"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - payment-network
+
 volumes:
   postgres_data:
   redis_data:

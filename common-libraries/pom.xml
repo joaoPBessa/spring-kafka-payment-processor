@@ -22,5 +22,33 @@
             <groupId>jakarta.validation</groupId>
             <artifactId>jakarta.validation-api</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.apache.avro</groupId>
+            <artifactId>avro</artifactId>
+        </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.avro</groupId>
+                <artifactId>avro-maven-plugin</artifactId>
+                <version>${avro.version}</version>
+                <executions>
+                    <execution>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>schema</goal>
+                        </goals>
+                        <configuration>
+                            <sourceDirectory>${project.basedir}/src/main/avro</sourceDirectory>
+                            <outputDirectory>${project.build.directory}/generated-sources/avro</outputDirectory>
+                            <enableDecimalLogicalType>true</enableDecimalLogicalType>
+                            <stringType>String</stringType>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>

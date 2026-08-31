@@ -22,4 +22,15 @@ class TestcontainersConfiguration {
 		return new GenericContainer<>(DockerImageName.parse("openzipkin/zipkin:latest")).withExposedPorts(9411);
 	}
 
+	@Bean
+	@ServiceConnection(name = "redis")
+	GenericContainer<?> redisContainer() {
+		return new GenericContainer<>(DockerImageName.parse("redis:7.2.15-alpine")).withExposedPorts(6379);
+	}
+
+	@Bean
+	GenericContainer<?> apicurioContainer() {
+		return new GenericContainer<>(DockerImageName.parse("apicurio/apicurio-registry:3.3.2")).withExposedPorts(8080);
+	}
+
 }

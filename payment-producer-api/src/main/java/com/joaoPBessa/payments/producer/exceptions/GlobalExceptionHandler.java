@@ -13,6 +13,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import com.joaoPBessa.payments.producer.api.dto.response.ErrorResponse;
 
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 	
@@ -49,6 +52,7 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleAllExceptions(Exception ex) {
+        log.error("Unhandled exception while processing request", ex);
         ErrorResponse response = new ErrorResponse(
                 LocalDateTime.now(),
                 HttpStatus.INTERNAL_SERVER_ERROR.value(),
@@ -78,6 +82,17 @@ public class GlobalExceptionHandler {
                 null
         );
         return new ResponseEntity<>(response, HttpStatus.CONFLICT);
+    }
+
+	@ExceptionHandler(PaymentPublishException.class)
+	public ResponseEntity<ErrorResponse> handlePaymentPublishException(PaymentPublishException ex) {
+        ErrorResponse response = new ErrorResponse(
+                LocalDateTime.now(),
+                HttpStatus.SERVICE_UNAVAILABLE.value(),
+                "Payment could not be published to Kafka: " + ex.getMessage(),
+                null
+        );
+        return new ResponseEntity<>(response, HttpStatus.SERVICE_UNAVAILABLE);
     }
 
 }
