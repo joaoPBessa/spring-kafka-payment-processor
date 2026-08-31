@@ -22,4 +22,9 @@ class TestcontainersConfiguration {
 		return new GenericContainer<>(DockerImageName.parse("openzipkin/zipkin:latest")).withExposedPorts(9411);
 	}
 
+	@Bean
+	GenericContainer<?> apicurioContainer() {
+		return new GenericContainer<>(DockerImageName.parse("apicurio/apicurio-registry:3.3.2")).withExposedPorts(8080);
+	}
+
 }
