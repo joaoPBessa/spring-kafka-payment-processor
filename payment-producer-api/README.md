@@ -8,7 +8,7 @@ The Spring Boot service in this repository: an account-management REST API with 
 - **Framework:** Spring Boot 4.0.0, Spring Cloud 2025.1.1
 - **Database:** PostgreSQL 15, targeting a dedicated `payment` schema
 - **Migration:** Flyway (owned by the sibling `payment-db-migration` module)
-- **Messaging:** Apache Kafka client dependency present; no producer implemented yet
+- **Messaging:** Apache Kafka broker provisioned via `docker-compose.yml`; client dependency present, no producer implemented yet
 - **Secrets:** HashiCorp Vault (Spring Cloud Vault)
 - **Caching:** Redis (Spring Data Redis)
 - **Observability:** Spring Boot Actuator, Micrometer tracing (Brave), Zipkin — dependencies are in place, but no custom metrics or dashboards are configured yet
@@ -34,7 +34,7 @@ The Spring Boot service in this repository: an account-management REST API with 
 docker-compose up -d
 ```
 
-This starts Postgres, Redis, and Vault — **not Kafka**; there's no broker running locally yet, since the producer itself isn't implemented (see [Roadmap](#roadmap)).
+This starts Postgres, Redis, Vault, and Kafka. The broker comes up empty — no topics exist yet, since the producer itself isn't implemented (see [Roadmap](#roadmap)).
 
 > The credentials in `docker-compose.yml` are throwaway local-development values only — not meant for any real environment.
 
@@ -96,6 +96,7 @@ All endpoints are versioned under `/api/v1`.
 ## Testing
 
 - **Slice tests** (`@WebMvcTest`) for both controllers: `AccountControllerTest` (15 tests), `PaymentControllerTest` (12 tests).
+- **Unit tests**: `AccountServiceTest` (9 tests, plain Mockito — no Spring context).
 - **Integration test**: `PaymentProducerApiApplicationTests` boots the full context against Testcontainers-managed Kafka and Zipkin containers.
 
 ```bash
