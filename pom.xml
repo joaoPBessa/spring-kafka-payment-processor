@@ -17,12 +17,15 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <spring-boot.version>4.0.0</spring-boot.version>
         <avro.version>1.12.1</avro.version>
+        <spring-cloud.version>2025.1.1</spring-cloud.version>
+        <apicurio.version>3.0.8</apicurio.version>
     </properties>
 
     <modules>
         <module>common-libraries</module>
         <module>payment-db-migration</module>
         <module>payment-producer-api</module>
+        <module>payment-consumer-api</module>
     </modules>
 
     <dependencyManagement>
@@ -35,9 +38,21 @@
 	            <scope>import</scope>
 	        </dependency>
 	        <dependency>
+	            <groupId>org.springframework.cloud</groupId>
+	            <artifactId>spring-cloud-dependencies</artifactId>
+	            <version>${spring-cloud.version}</version>
+	            <type>pom</type>
+	            <scope>import</scope>
+	        </dependency>
+	        <dependency>
 	            <groupId>org.apache.avro</groupId>
 	            <artifactId>avro</artifactId>
 	            <version>${avro.version}</version>
+	        </dependency>
+	        <dependency>
+	            <groupId>io.apicurio</groupId>
+	            <artifactId>apicurio-registry-avro-serde-kafka</artifactId>
+	            <version>${apicurio.version}</version>
 	        </dependency>
 	    </dependencies>
 	</dependencyManagement>
@@ -46,9 +61,30 @@
         <pluginManagement>
             <plugins>
                 <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <configuration>
+                        <parameters>true</parameters>
+                        <annotationProcessorPaths>
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                            </path>
+                        </annotationProcessorPaths>
+                    </configuration>
+                </plugin>
+                <plugin>
                     <groupId>org.springframework.boot</groupId>
                     <artifactId>spring-boot-maven-plugin</artifactId>
                     <version>${spring-boot.version}</version>
+                    <configuration>
+                        <excludes>
+                            <exclude>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                            </exclude>
+                        </excludes>
+                    </configuration>
                 </plugin>
             </plugins>
         </pluginManagement>
