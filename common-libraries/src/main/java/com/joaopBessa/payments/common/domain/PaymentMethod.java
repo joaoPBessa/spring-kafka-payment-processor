@@ -29,6 +29,13 @@ public enum PaymentMethod {
         return avroValue;
     }
 
+    public static PaymentMethod fromAvro(com.joaopBessa.payments.common.avro.PaymentMethod avroMethod) {
+        return Stream.of(PaymentMethod.values())
+                .filter(targetEnum -> targetEnum.avroValue == avroMethod)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Unknown Avro payment method: " + avroMethod));
+    }
+
     @JsonCreator
     public static PaymentMethod decode(String code) {
         return Stream.of(PaymentMethod.values())
