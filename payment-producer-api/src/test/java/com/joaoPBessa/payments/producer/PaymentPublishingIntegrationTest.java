@@ -15,6 +15,7 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.kafka.autoconfigure.KafkaConnectionDetails;
 import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
@@ -23,12 +24,6 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 import com.joaoPBessa.payments.producer.api.dto.request.PaymentRequestDTO;
 import com.joaoPBessa.payments.producer.api.dto.response.PaymentResponseDTO;
@@ -39,7 +34,6 @@ import com.joaopBessa.payments.common.domain.PaymentMethod;
 
 import io.apicurio.registry.serde.avro.AvroKafkaDeserializer;
 
-@Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureTestRestTemplate
 @ActiveProfiles("test")
@@ -47,15 +41,8 @@ import io.apicurio.registry.serde.avro.AvroKafkaDeserializer;
 @DisplayName("Payment publishing (Testcontainers integration)")
 class PaymentPublishingIntegrationTest {
 
-    @Container
-    static final GenericContainer<?> APICURIO =
-            new GenericContainer<>(DockerImageName.parse("apicurio/apicurio-registry:3.3.2")).withExposedPorts(8080);
-
-    @DynamicPropertySource
-    static void apicurioProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.kafka.producer.properties.apicurio.registry.url",
-                () -> "http://%s:%d/apis/registry/v3".formatted(APICURIO.getHost(), APICURIO.getMappedPort(8080)));
-    }
+    @Value("${spring.kafka.producer.properties.apicurio.registry.url}")
+    private String registryUrl;
 
     @Autowired
     private TestRestTemplate restTemplate;
@@ -94,8 +81,7 @@ class PaymentPublishingIntegrationTest {
         consumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, AvroKafkaDeserializer.class);
-        consumerProps.put("apicurio.registry.url",
-                "http://%s:%d/apis/registry/v3".formatted(APICURIO.getHost(), APICURIO.getMappedPort(8080)));
+        consumerProps.put("apicurio.registry.url", registryUrl);
         consumerProps.put("apicurio.registry.use-specific-avro-reader", "true");
 
         try (KafkaConsumer<String, PaymentEvent> consumer = new KafkaConsumer<>(consumerProps)) {
