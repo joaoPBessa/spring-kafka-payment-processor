@@ -9,18 +9,18 @@
     - [x] Implement `GET /all` with **Pageable** and **Specification Factory** for dynamic filtering
 - [ ] **Business Rules & Auditing**
     - [x] Implement **Soft Delete** (`active` flag or `deleted_at` column)
-    - [ ] Create **Global Exception Handler** (`@ControllerAdvice`)
+    - [x] Create **Global Exception Handler** (`@ControllerAdvice`)
     - [ ] Customize and internationalize **Bean Validation** messages
-    - [ ] Configure batch validation (return all errors at once in the JSON response)
-- [ ] **Cache & Performance**
-    - [ ] Spin up **Redis** instance in `docker-compose.yml`
-    - [ ] Implement caching layer (`@Cacheable`) for lookups
-    - [ ] Implement strategic **Cache Evict** on write operations (Save, Update, Delete)
+    - [x] Configure batch validation (return all errors at once in the JSON response)
+- [x] **Cache & Performance**
+    - [x] Spin up **Redis** instance in `docker-compose.yml`
+    - [x] Implement caching layer (`@Cacheable`) for lookups
+    - [x] Implement strategic **Cache Evict** on write operations (Update, Delete)
 
 ## 🏗️ Infrastructure, Security & Observability
-- [ ] **Security with HashiCorp Vault**
-    - [ ] Spin up **Vault** in `docker-compose.yml`
-    - [ ] Migrate credentials from `application.yaml` to Vault (Secrets Management)
+- [x] **Security with HashiCorp Vault**
+    - [x] Spin up **Vault** in `docker-compose.yml`
+    - [x] Migrate credentials from `application.yaml` to Vault (Secrets Management)
 - [ ] **Observability & Telemetry**
     - [ ] Add **Structured Logging** and traceability
     - [ ] Configure **Micrometer/Actuator** to export metrics
@@ -31,8 +31,8 @@
 
 ## 📨 Payment Engine (Kafka Integration)
 - [ ] **Kafka Ecosystem Configuration**
-    - [ ] Add **Kafka** and **Schema Registry** to `docker-compose.yml`
-    - [ ] Configure **Confluent Control Center** for visual cluster monitoring
+    - [x] Add **Kafka** and **Schema Registry** (Apicurio) to `docker-compose.yml`
+    - [ ] Add a visual cluster monitoring UI (Kafka UI or Redpanda Console)
 - [ ] **Producer Development**
     - [x] Define **Avro** schemas for payment events
     - [ ] Create `PaymentController` with balance/limit validations
@@ -45,9 +45,9 @@
     - [ ] Metrics and alerts for DLT volume
 
 ## 🧪 Quality & Testing
-- [ ] **Unit Testing (JUnit 5 & Mockito)**
-    - [ ] Cover Controllers, Services, and Mappers
-    - [ ] Repository tests with **H2 In-Memory** (or TestContainers for realism)
+- [x] **Unit Testing (JUnit 5 & Mockito)**
+    - [x] Cover Controllers, Services, and Mappers
+    - [x] Repository tests with **TestContainers** (real Postgres, in the consumer module)
 - [ ] **Integration Testing & BDD**
     - [ ] Implement acceptance scenarios with **Cucumber**
     - [ ] Validate end-to-end flow (API -> DB -> Kafka)
