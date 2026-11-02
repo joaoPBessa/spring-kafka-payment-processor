@@ -1,0 +1,55 @@
+spring:
+  application:
+    name: payment-consumer-api
+  main:
+    web-application-type: none
+
+  datasource:
+    hikari:
+      schema: payment
+      maximum-pool-size: 10
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    schemas: payment
+    locations: classpath:db/migration
+
+  kafka:
+    consumer:
+      group-id: payment-persistence
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: io.apicurio.registry.serde.avro.AvroKafkaDeserializer
+        apicurio.registry.url: http://localhost:8080/apis/registry/v3
+        apicurio.registry.use-specific-avro-reader: true
+    producer:
+      properties:
+        apicurio.registry.url: http://localhost:8080/apis/registry/v3
+        apicurio.registry.auto-register: true
+
+app:
+  kafka:
+    topics:
+      payment-events: payment.events
+      payment-events-dlt: payment.events.DLT
+    retry:
+      max-attempts: 4
+      initial-interval: 1s
+      multiplier: 2.0
+      max-interval: 10s
+
+---
+spring:
+  config:
+    activate:
+      on-profile: '!test'
+  datasource:
+    url: jdbc:postgresql://localhost:5432/payments_db
+  flyway:
+    url: jdbc:postgresql://localhost:5432/payments_db
+  kafka:
+    bootstrap-servers: localhost:9092

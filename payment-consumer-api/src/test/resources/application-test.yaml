@@ -1,0 +1,7 @@
+app:
+  kafka:
+    retry:
+      max-attempts: 3
+      initial-interval: 50ms
+      multiplier: 1.5
+      max-interval: 200ms

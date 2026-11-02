@@ -38,6 +38,12 @@
     - [ ] Create `PaymentController` with balance/limit validations
     - [x] Implement synchronous Kafka posting with callback handling (Success/Failure)
 
+- [ ] **Consumer Development** (`payment-consumer-api`)
+    - [x] Consume `payment.events` and persist each payment (idempotent by transaction id)
+    - [x] Retry with exponential backoff and publish failures to a **Dead Letter Topic**
+    - [ ] Replay tool / reprocessing flow for the DLT
+    - [ ] Metrics and alerts for DLT volume
+
 ## 🧪 Quality & Testing
 - [ ] **Unit Testing (JUnit 5 & Mockito)**
     - [ ] Cover Controllers, Services, and Mappers
