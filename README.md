@@ -72,9 +72,9 @@ docker-compose up -d
 # Build and test everything
 mvn -B clean verify
 
-# Or run the API directly (port 8080 is taken by Apicurio in docker-compose, so pick another one)
+# Or run the API directly (it listens on 8081; 8080 is taken by Apicurio in docker-compose)
 cd payment-producer-api
-mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=8081
+mvn spring-boot:run
 
 # And, in another terminal, the consumer that persists the published payments
 cd payment-consumer-api
