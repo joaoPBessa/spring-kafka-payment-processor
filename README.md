@@ -13,6 +13,7 @@ A multi-module payment-processing backend, built to explore account management a
 - Cache-aside with Redis (`@Cacheable`/`@CacheEvict`) and centralized exception handling.
 - Schema-governed event publishing: Avro-generated types, Apicurio Registry validation, and a synchronous, timeout-bounded Kafka producer.
 - A separate Kafka consumer that persists payments idempotently and routes anything it cannot save to a Dead Letter Topic after bounded, exponential retries.
+- Observability end to end: Prometheus metrics, Grafana dashboards (Apdex, Kafka lag, database query speed), distributed traces across the Kafka hop in Zipkin, and structured JSON logs.
 - Externalized configuration and secrets via HashiCorp Vault (Spring Cloud Vault).
 - Slice tests (`@WebMvcTest`) and full-context integration tests backed by Testcontainers.
 - Built on Spring Boot 4.0's newly modularized starters (`spring-boot-starter-webmvc`, `spring-boot-starter-webmvc-test`, etc.), released only recently.
@@ -22,7 +23,7 @@ A multi-module payment-processing backend, built to explore account management a
 | Module | Type | What it is |
 |---|---|---|
 | [`payment-producer-api`](payment-producer-api/) | Spring Boot app | The actual service — REST API, JPA persistence, Redis cache, Vault-backed config. See its own [README](payment-producer-api/README.md) for endpoints and setup. |
-| [`payment-consumer-api`](payment-consumer-api/) | Spring Boot app (no web layer) | Consumes `payment.events`, writes each payment to Postgres exactly once, and dead-letters failures to `payment.events.DLT`. See its own [README](payment-consumer-api/README.md). |
+| [`payment-consumer-api`](payment-consumer-api/) | Spring Boot app (Actuator only, no controllers) | Consumes `payment.events`, writes each payment to Postgres exactly once, and dead-letters failures to `payment.events.DLT`. See its own [README](payment-consumer-api/README.md). |
 | `common-libraries` | jar | Shared domain types: the `PaymentMethod` enum and the `PaymentEvent` Avro schema (the Kafka wire contract), kept separate so both can be reused by future consumer modules. |
 | `payment-db-migration` | jar | Owns the Flyway SQL migrations and the `flyway-maven-plugin` binding, decoupled from the runtime app module so schema versioning doesn't require touching `payment-producer-api`. |
 
@@ -36,10 +37,11 @@ A multi-module payment-processing backend, built to explore account management a
 - Vault-backed externalized configuration.
 - **Kafka payment publishing** — `POST /api/v1/payments` validates both accounts exist (via the same Redis cache as account lookups), publishes an Avro-encoded event to Kafka, validated against an Apicurio Registry schema, and only returns `202 Accepted` once the broker confirms the write.
 - **Payment consumer** — `payment-consumer-api` reads the Avro events, stores them in the `PAYMENT` table (unique transaction id, foreign keys to both accounts, positive-amount check) and skips duplicates. Failures are retried with exponential backoff and then published to `payment.events.DLT`; errors that can never succeed (unknown account, invalid amount, undeserializable payload) skip the retries.
-- Testcontainers-backed integration tests alongside `@WebMvcTest`/unit tests (99 tests total, see [Testing](#testing)).
+- **Observability** — metrics, dashboards, traces and JSON logs for both services (see [Observability](#observability)).
+- Testcontainers-backed integration tests alongside `@WebMvcTest`/unit tests (145 tests total, see [Testing](#testing)).
 
 ### Roadmap / In progress
-- Observability dashboards — Actuator and Micrometer/Zipkin tracing dependencies are already in place, but no custom metrics or dashboards are wired up yet.
+- Replaying the dead letter topic, a Kafka monitoring UI, and alerting on top of the metrics.
 
 ## Tech stack
 
@@ -51,8 +53,8 @@ A multi-module payment-processing backend, built to explore account management a
 | Messaging | Apache Kafka + Apicurio Registry (Avro), both running via `docker-compose.yml`; synchronous producer in `payment-producer-api`, consumer with retry + Dead Letter Topic in `payment-consumer-api` |
 | Config / Secrets | Spring Cloud Vault |
 | Validation | Jakarta Bean Validation |
-| Observability | Spring Boot Actuator, Micrometer tracing (Brave), Zipkin |
-| Testing | JUnit 5/6, Mockito, AssertJ, Testcontainers (Kafka, Zipkin), H2 |
+| Observability | Spring Boot Actuator, Micrometer + Prometheus, Grafana, tracing (Brave) with Zipkin, Kafka exporter, ECS structured logs |
+| Testing | JUnit 5/6, Mockito, AssertJ, Testcontainers (Kafka, Postgres, Redis, Apicurio), H2 |
 
 ## Getting started
 
@@ -62,7 +64,8 @@ Prerequisites: JDK 21, Maven, Docker (for local infrastructure and for Testconta
 git clone https://github.com/joaoPBessa/spring-kafka-payment-processor.git
 cd spring-kafka-payment-processor
 
-# Start local infrastructure: Postgres, Redis, Vault, Kafka, and Apicurio Registry
+# Start local infrastructure: Postgres, Redis, Vault, Kafka, Apicurio Registry,
+# and the observability stack (Prometheus, Grafana, Zipkin, Kafka exporter)
 docker-compose up -d
 ```
 
@@ -81,6 +84,44 @@ cd payment-consumer-api
 mvn spring-boot:run
 ```
 
+## Observability
+
+With `docker-compose up -d` running and both applications started, everything is wired up without extra configuration:
+
+| What | URL |
+|---|---|
+| Grafana dashboards (anonymous access, no login) | http://localhost:3000 |
+| Prometheus | http://localhost:9090 |
+| Zipkin traces | http://localhost:9411 |
+| Producer metrics / health | http://localhost:8081/actuator/prometheus, `/actuator/health` |
+| Consumer metrics / health | http://localhost:8082/actuator/prometheus, `/actuator/health` |
+
+Prometheus scrapes both applications (running on the host) and a Kafka exporter, so consumer group lag and the size of the dead letter topic are visible even when an application is down. Run an application with `-Dspring-boot.run.profiles=json-logs` to get ECS-formatted JSON logs that carry the `traceId` and `spanId`.
+
+`monitoring/generate-traffic.sh` creates accounts, sends payments (including invalid ones) and forces a few events into the dead letter topic, so the panels have something to show; `monitoring/capture-dashboards.sh` renders the dashboards below with a headless browser. Two limits to know: the duplicates panel stays at zero with this traffic, because the transaction id is generated by the producer, and there is no alerting.
+
+### Payments Overview
+
+Apdex (T = 0.5 s, from the HTTP request buckets), throughput, error rate, latency percentiles, publish outcomes, payments per method, what the consumer persisted or dead-lettered, and Kafka lag from both the broker and the client side.
+
+![Payments Overview dashboard](docs/images/observability/payments-overview.png)
+
+### JVM and Application Health
+
+![JVM and Application Health dashboard](docs/images/observability/jvm-app-health.png)
+
+### Database and Cache
+
+Connection pool usage, how long connections are held, repository call rate and p95 duration per method, account cache hit ratio and Redis command latency.
+
+![Database and Cache dashboard](docs/images/observability/database.png)
+
+### One payment as one trace
+
+A single `POST /api/v1/payments` shows up in Zipkin as one trace: the HTTP request, the Redis account lookups, the Kafka send, and the consumer processing the event. Failed events keep the same trace id through the dead letter topic. In Grafana, Prometheus exemplars link a metric sample to its trace.
+
+![Trace of a payment across the producer and the consumer](docs/images/observability/zipkin-trace.png)
+
 ## Testing
 
 ```bash
@@ -88,10 +129,10 @@ mvn test      # unit + slice tests
 mvn verify    # also runs the Testcontainers-backed integration test (requires Docker running)
 ```
 
-Current coverage — 99 tests in total:
-- `common-libraries` (11): `PaymentMethod` mapping to and from Avro.
-- `payment-producer-api` (46): 15 on `AccountController`, 14 on `PaymentController`, 9 on `AccountService`, 5 on `PaymentService`, a full-context startup test, and a 2-test Kafka+Apicurio integration suite.
-- `payment-consumer-api` (42): migration constraints and repository on a real Postgres, mapper, idempotent persistence service, listener, configuration validation, error-handler configuration, and a 7-scenario integration suite on real Kafka, Apicurio and Postgres (persist, duplicate, unknown account, non-positive amount, transient failure exhausted, transient failure recovered, poison pill).
+Current coverage — 145 tests in total:
+- `common-libraries` (18): `PaymentMethod` mapping to and from Avro and the observation predicate that keeps actuator calls out of metrics and traces.
+- `payment-producer-api` (65): 15 on `AccountController`, 14 on `PaymentController`, 9 on `AccountService`, 7 on `PaymentService`, 10 on the payment metrics, 3 on the `json-logs` profile, a full-context startup test, and a 6-test integration suite on real Kafka and Apicurio (round trip with the `traceparent` header, Prometheus scrape, health, cache hit counting, actuator exclusion).
+- `payment-consumer-api` (62): migration constraints and repository on a real Postgres, mapper, idempotent persistence service, consumer metrics and retry listener, listener, configuration validation, error-handler configuration, `json-logs` profile, and a 12-scenario integration suite on real Kafka, Apicurio and Postgres (persist, duplicate, unknown account, non-positive amount, transient failure exhausted or recovered, poison pill, counters, trace continuation, Prometheus scrape and health).
 
 ## CI
 

@@ -21,13 +21,13 @@
 - [x] **Security with HashiCorp Vault**
     - [x] Spin up **Vault** in `docker-compose.yml`
     - [x] Migrate credentials from `application.yaml` to Vault (Secrets Management)
-- [ ] **Observability & Telemetry**
-    - [ ] Add **Structured Logging** and traceability
-    - [ ] Configure **Micrometer/Actuator** to export metrics
-    - [ ] Spin up **Grafana** and **Prometheus** in Docker
-    - [ ] Create Dashboards:
-        - [ ] JVM/App health metrics
-        - [ ] Business metrics (accounts created, validation errors)
+- [x] **Observability & Telemetry**
+    - [x] Add **Structured Logging** (`json-logs` profile) and traceability (traces span producer, Kafka and consumer in **Zipkin**)
+    - [x] Configure **Micrometer/Actuator** to export metrics
+    - [x] Spin up **Grafana**, **Prometheus**, Zipkin and a Kafka exporter in Docker
+    - [x] Create Dashboards:
+        - [x] JVM/App health metrics, Apdex and latency
+        - [x] Business metrics (payments, accounts created, validation errors), Kafka lag and database query speed
 
 ## 📨 Payment Engine (Kafka Integration)
 - [ ] **Kafka Ecosystem Configuration**
@@ -42,7 +42,7 @@
     - [x] Consume `payment.events` and persist each payment (idempotent by transaction id)
     - [x] Retry with exponential backoff and publish failures to a **Dead Letter Topic**
     - [ ] Replay tool / reprocessing flow for the DLT
-    - [ ] Metrics and alerts for DLT volume
+    - [x] Metrics and dashboard panels for DLT volume (alerting is out of scope)
 
 ## 🧪 Quality & Testing
 - [x] **Unit Testing (JUnit 5 & Mockito)**
