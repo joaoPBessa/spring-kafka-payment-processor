@@ -20,14 +20,17 @@ import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaOperations;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.core.MicrometerProducerListener;
 import org.springframework.kafka.core.ProducerFactory;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.ExponentialBackOffWithMaxRetries;
 
+import com.joaoPBessa.payments.consumer.metrics.RetryMetricsListener;
 import com.joaopBessa.payments.common.avro.PaymentEvent;
 
 import io.apicurio.registry.serde.avro.AvroKafkaSerializer;
+import io.micrometer.core.instrument.MeterRegistry;
 
 @Configuration
 @EnableConfigurationProperties(KafkaConsumerProperties.class)
@@ -37,28 +40,28 @@ public class KafkaConsumerErrorHandlingConfig {
 
 	@Bean
 	public ProducerFactory<String, PaymentEvent> paymentEventDltProducerFactory(
-			KafkaProperties kafkaProperties, KafkaConnectionDetails connectionDetails) {
-		return new DefaultKafkaProducerFactory<>(
-				dltProducerProperties(kafkaProperties, connectionDetails, AvroKafkaSerializer.class));
+			KafkaProperties kafkaProperties, KafkaConnectionDetails connectionDetails, MeterRegistry meterRegistry) {
+		return meteredProducerFactory(
+				dltProducerProperties(kafkaProperties, connectionDetails, AvroKafkaSerializer.class), meterRegistry);
 	}
 
 	@Bean
 	public ProducerFactory<String, byte[]> rawDltProducerFactory(
-			KafkaProperties kafkaProperties, KafkaConnectionDetails connectionDetails) {
-		return new DefaultKafkaProducerFactory<>(
-				dltProducerProperties(kafkaProperties, connectionDetails, ByteArraySerializer.class));
+			KafkaProperties kafkaProperties, KafkaConnectionDetails connectionDetails, MeterRegistry meterRegistry) {
+		return meteredProducerFactory(
+				dltProducerProperties(kafkaProperties, connectionDetails, ByteArraySerializer.class), meterRegistry);
 	}
 
 	@Bean
 	public KafkaTemplate<String, PaymentEvent> paymentEventDltKafkaTemplate(
 			ProducerFactory<String, PaymentEvent> paymentEventDltProducerFactory) {
-		return new KafkaTemplate<>(paymentEventDltProducerFactory);
+		return observedTemplate(paymentEventDltProducerFactory);
 	}
 
 	@Bean
 	public KafkaTemplate<String, byte[]> rawDltKafkaTemplate(
 			ProducerFactory<String, byte[]> rawDltProducerFactory) {
-		return new KafkaTemplate<>(rawDltProducerFactory);
+		return observedTemplate(rawDltProducerFactory);
 	}
 
 	@Bean
@@ -80,10 +83,12 @@ public class KafkaConsumerErrorHandlingConfig {
 
 	@Bean
 	public DefaultErrorHandler paymentEventErrorHandler(
-			DeadLetterPublishingRecoverer paymentEventRecoverer, KafkaConsumerProperties properties) {
+			DeadLetterPublishingRecoverer paymentEventRecoverer, KafkaConsumerProperties properties,
+			RetryMetricsListener retryMetricsListener) {
 		DefaultErrorHandler errorHandler =
 				new DefaultErrorHandler(paymentEventRecoverer, retryBackOff(properties.retry()));
 		errorHandler.addNotRetryableExceptions(DataIntegrityViolationException.class);
+		errorHandler.setRetryListeners(retryMetricsListener);
 		return errorHandler;
 	}
 
@@ -97,6 +102,19 @@ public class KafkaConsumerErrorHandlingConfig {
 
 	static BiFunction<ConsumerRecord<?, ?>, Exception, TopicPartition> dltDestinationResolver(String dltTopic) {
 		return (record, exception) -> new TopicPartition(dltTopic, ANY_PARTITION);
+	}
+
+	private static <V> ProducerFactory<String, V> meteredProducerFactory(
+			Map<String, Object> producerProperties, MeterRegistry meterRegistry) {
+		DefaultKafkaProducerFactory<String, V> factory = new DefaultKafkaProducerFactory<>(producerProperties);
+		factory.addListener(new MicrometerProducerListener<>(meterRegistry));
+		return factory;
+	}
+
+	private static <V> KafkaTemplate<String, V> observedTemplate(ProducerFactory<String, V> producerFactory) {
+		KafkaTemplate<String, V> template = new KafkaTemplate<>(producerFactory);
+		template.setObservationEnabled(true);
+		return template;
 	}
 
 	private Map<String, Object> dltProducerProperties(KafkaProperties kafkaProperties,

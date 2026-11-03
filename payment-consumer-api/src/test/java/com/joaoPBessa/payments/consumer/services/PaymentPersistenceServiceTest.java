@@ -23,6 +23,7 @@ import org.springframework.dao.QueryTimeoutException;
 
 import com.joaoPBessa.payments.consumer.domain.entities.Payment;
 import com.joaoPBessa.payments.consumer.mappers.PaymentEventMapper;
+import com.joaoPBessa.payments.consumer.metrics.PaymentConsumerMetrics;
 import com.joaoPBessa.payments.consumer.repositories.PaymentRepository;
 import com.joaopBessa.payments.common.avro.PaymentEvent;
 import com.joaopBessa.payments.common.domain.PaymentMethod;
@@ -38,6 +39,9 @@ class PaymentPersistenceServiceTest {
 
     @Mock
     private PaymentEventMapper paymentEventMapper;
+
+    @Mock
+    private PaymentConsumerMetrics metrics;
 
     @InjectMocks
     private PaymentPersistenceService service;
@@ -70,6 +74,8 @@ class PaymentPersistenceServiceTest {
         verify(paymentEventMapper, times(1)).toEntity(event);
         verify(paymentRepository, times(1)).saveAndFlush(payment);
         verifyNoMoreInteractions(paymentRepository, paymentEventMapper);
+        verify(metrics, times(1)).paymentPersisted();
+        verifyNoMoreInteractions(metrics);
     }
 
     @Test
@@ -82,6 +88,8 @@ class PaymentPersistenceServiceTest {
         verify(paymentRepository, times(1)).existsByTransactionId(TRANSACTION_ID);
         verifyNoMoreInteractions(paymentRepository);
         verifyNoInteractions(paymentEventMapper);
+        verify(metrics, times(1)).duplicateIgnored();
+        verifyNoMoreInteractions(metrics);
     }
 
     @Test
@@ -97,6 +105,8 @@ class PaymentPersistenceServiceTest {
         verify(paymentEventMapper, times(1)).toEntity(event);
         verify(paymentRepository, times(1)).saveAndFlush(payment);
         verifyNoMoreInteractions(paymentRepository, paymentEventMapper);
+        verify(metrics, times(1)).duplicateIgnored();
+        verifyNoMoreInteractions(metrics);
     }
 
     @Test
@@ -113,6 +123,7 @@ class PaymentPersistenceServiceTest {
         verify(paymentEventMapper, times(1)).toEntity(event);
         verify(paymentRepository, times(1)).saveAndFlush(payment);
         verifyNoMoreInteractions(paymentRepository, paymentEventMapper);
+        verifyNoInteractions(metrics);
     }
 
     @Test
@@ -129,6 +140,7 @@ class PaymentPersistenceServiceTest {
         verify(paymentEventMapper, times(1)).toEntity(event);
         verify(paymentRepository, times(1)).saveAndFlush(payment);
         verifyNoMoreInteractions(paymentRepository, paymentEventMapper);
+        verifyNoInteractions(metrics);
     }
 
 }

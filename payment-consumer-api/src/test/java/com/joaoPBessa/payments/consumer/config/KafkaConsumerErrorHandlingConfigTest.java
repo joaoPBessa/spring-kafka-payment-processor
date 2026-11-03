@@ -1,18 +1,27 @@
 package com.joaoPBessa.payments.consumer.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.time.Duration;
+import java.util.List;
 
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.kafka.autoconfigure.KafkaConnectionDetails;
+import org.springframework.boot.kafka.autoconfigure.KafkaProperties;
+import org.springframework.kafka.core.MicrometerProducerListener;
+import org.springframework.kafka.core.ProducerFactory;
 import org.springframework.kafka.support.ExponentialBackOffWithMaxRetries;
 
 import com.joaoPBessa.payments.consumer.config.KafkaConsumerProperties.Retry;
 import com.joaoPBessa.payments.consumer.config.KafkaConsumerProperties.Topics;
+
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 @DisplayName("KafkaConsumerErrorHandlingConfig")
 class KafkaConsumerErrorHandlingConfigTest {
@@ -54,6 +63,31 @@ class KafkaConsumerErrorHandlingConfigTest {
                 .apply(record, new IllegalStateException("boom"));
 
         assertThat(destination).isEqualTo(new TopicPartition(DLT_TOPIC, -1));
+    }
+
+    private KafkaConnectionDetails connectionDetails() {
+        KafkaConnectionDetails connectionDetails = mock(KafkaConnectionDetails.class);
+        when(connectionDetails.getProducer())
+                .thenReturn(KafkaConnectionDetails.Configuration.of(List.of("localhost:9092")));
+        return connectionDetails;
+    }
+
+    private void assertMetered(ProducerFactory<?, ?> factory) {
+        assertThat(factory.getListeners()).hasAtLeastOneElementOfType(MicrometerProducerListener.class);
+    }
+
+    @Test
+    @DisplayName("Should export Kafka client metrics for the payment event dead letter producer")
+    void shouldExportKafkaClientMetricsForPaymentEventDeadLetterProducer() {
+        assertMetered(config.paymentEventDltProducerFactory(new KafkaProperties(), connectionDetails(),
+                new SimpleMeterRegistry()));
+    }
+
+    @Test
+    @DisplayName("Should export Kafka client metrics for the raw dead letter producer")
+    void shouldExportKafkaClientMetricsForRawDeadLetterProducer() {
+        assertMetered(config.rawDltProducerFactory(new KafkaProperties(), connectionDetails(),
+                new SimpleMeterRegistry()));
     }
 
     @Test
