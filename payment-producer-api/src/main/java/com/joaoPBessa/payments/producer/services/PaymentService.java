@@ -13,8 +13,11 @@ import org.springframework.stereotype.Service;
 import com.joaoPBessa.payments.producer.api.dto.request.PaymentRequestDTO;
 import com.joaoPBessa.payments.producer.config.KafkaProducerProperties;
 import com.joaoPBessa.payments.producer.exceptions.PaymentPublishException;
+import com.joaoPBessa.payments.producer.metrics.PaymentMetrics;
+import com.joaoPBessa.payments.producer.metrics.PublishOutcome;
 import com.joaopBessa.payments.common.avro.PaymentEvent;
 
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 
 @Service
@@ -24,6 +27,7 @@ public class PaymentService {
 	private final KafkaTemplate<String, PaymentEvent> paymentEventKafkaTemplate;
 	private final KafkaProducerProperties kafkaProducerProperties;
 	private final AccountService accountService;
+	private final PaymentMetrics paymentMetrics;
 
 	public String publishPayment(PaymentRequestDTO request) {
 		validateAccountsExist(request);
@@ -31,6 +35,7 @@ public class PaymentService {
 		String transactionId = UUID.randomUUID().toString();
 		PaymentEvent event = buildEvent(transactionId, request);
 		send(event);
+		paymentMetrics.paymentAccepted(request.paymentMethod(), event.getAmount());
 		return transactionId;
 	}
 
@@ -43,14 +48,21 @@ public class PaymentService {
 		String topic = kafkaProducerProperties.topics().paymentEvents();
 		var timeout = kafkaProducerProperties.producer().sendTimeout();
 
+		Timer.Sample sample = paymentMetrics.startPublish();
 		try {
 			paymentEventKafkaTemplate.send(topic, event.getSourceAccount(), event)
 					.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+			paymentMetrics.stopPublish(sample, PublishOutcome.SUCCESS);
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
+			paymentMetrics.stopPublish(sample, PublishOutcome.ERROR);
 			throw new PaymentPublishException("Interrupted while publishing payment event to Kafka", e);
-		} catch (ExecutionException | TimeoutException e) {
+		} catch (TimeoutException e) {
+			paymentMetrics.stopPublish(sample, PublishOutcome.TIMEOUT);
 			throw new PaymentPublishException("Failed to publish payment event to Kafka within " + timeout, e);
+		} catch (ExecutionException | RuntimeException e) {
+			paymentMetrics.stopPublish(sample, PublishOutcome.ERROR);
+			throw new PaymentPublishException("Failed to publish payment event to Kafka", e);
 		}
 	}
 
