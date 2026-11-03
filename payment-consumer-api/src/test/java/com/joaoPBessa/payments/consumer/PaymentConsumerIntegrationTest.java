@@ -48,6 +48,7 @@ import com.joaoPBessa.payments.consumer.domain.entities.Payment;
 import com.joaoPBessa.payments.consumer.repositories.PaymentRepository;
 import com.joaoPBessa.payments.consumer.services.PaymentPersistenceService;
 import com.joaopBessa.payments.common.avro.PaymentEvent;
+import com.joaopBessa.payments.common.observability.PrometheusText;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMetrics
@@ -107,6 +108,10 @@ class PaymentConsumerIntegrationTest {
         clients.close();
     }
 
+    private PrometheusText scrape() {
+        return new PrometheusText(restTemplate.getForObject("/actuator/prometheus", String.class));
+    }
+
     private PaymentEvent newEvent(String sourceAccount, BigDecimal amount) {
         return PaymentEvent.newBuilder()
                 .setTransactionId(UUID.randomUUID().toString())
@@ -161,6 +166,17 @@ class PaymentConsumerIntegrationTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).contains("application=\"payment-consumer-api\"");
+    }
+
+    @Test
+    @DisplayName("Should keep actuator requests out of the HTTP metrics")
+    void shouldKeepActuatorRequestsOutOfHttpMetrics() {
+        restTemplate.getForEntity("/actuator/health", String.class);
+
+        PrometheusText scrape = scrape();
+
+        assertThat(scrape.hasSeries("http_server_requests_seconds_count", "uri=\"/actuator/health\"")).isFalse();
+        assertThat(scrape.hasSeries("http_server_requests_seconds_count", "uri=\"/actuator/prometheus\"")).isFalse();
     }
 
     @Test
