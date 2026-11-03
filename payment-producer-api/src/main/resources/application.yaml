@@ -39,12 +39,39 @@ spring:
     locations: classpath:db/migration
 
   kafka:
+    admin:
+      operation-timeout: 5s
+    template:
+      observation-enabled: true
+    listener:
+      observation-enabled: true
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: io.apicurio.registry.serde.avro.AvroKafkaSerializer
       properties:
         apicurio.registry.url: http://localhost:8080/apis/registry/v3
         apicurio.registry.auto-register: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      slo:
+        http.server.requests: 500ms,2s
+    data:
+      repository:
+        autotime:
+          percentiles-histogram: true
+  tracing:
+    sampling:
+      probability: 1.0
 
 app:
   kafka:
