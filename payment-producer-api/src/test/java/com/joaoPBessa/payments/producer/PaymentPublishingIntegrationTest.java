@@ -13,6 +13,7 @@ import java.util.UUID;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.kafka.autoconfigure.KafkaConnectionDetails;
 import org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfigureMetrics;
+import org.springframework.boot.micrometer.tracing.test.autoconfigure.AutoConfigureTracing;
 import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -40,11 +42,14 @@ import io.apicurio.registry.serde.avro.AvroKafkaDeserializer;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMetrics
+@AutoConfigureTracing
 @AutoConfigureTestRestTemplate
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
 @DisplayName("Payment publishing (Testcontainers integration)")
 class PaymentPublishingIntegrationTest {
+
+    private static final String TRACE_PARENT_HEADER = "traceparent";
 
     @Value("${spring.kafka.producer.properties.apicurio.registry.url}")
     private String registryUrl;
@@ -58,12 +63,13 @@ class PaymentPublishingIntegrationTest {
     @Autowired
     private KafkaConnectionDetails kafkaConnectionDetails;
 
-    private PaymentEvent awaitEvent(KafkaConsumer<String, PaymentEvent> consumer, String transactionId) {
-        List<PaymentEvent> found = new ArrayList<>();
+    private ConsumerRecord<String, PaymentEvent> awaitRecord(KafkaConsumer<String, PaymentEvent> consumer,
+            String transactionId) {
+        List<ConsumerRecord<String, PaymentEvent>> found = new ArrayList<>();
         await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
             for (ConsumerRecord<String, PaymentEvent> record : consumer.poll(Duration.ofMillis(500))) {
                 if (transactionId.equals(record.value().getTransactionId())) {
-                    found.add(record.value());
+                    found.add(record);
                 }
             }
             assertThat(found).hasSize(1);
@@ -104,8 +110,10 @@ class PaymentPublishingIntegrationTest {
 
         try (KafkaConsumer<String, PaymentEvent> consumer = new KafkaConsumer<>(consumerProps)) {
             consumer.subscribe(List.of("payment.events"));
-            PaymentEvent event = awaitEvent(consumer, transactionId);
+            ConsumerRecord<String, PaymentEvent> record = awaitRecord(consumer, transactionId);
+            PaymentEvent event = record.value();
 
+            assertThat(record.headers().toArray()).extracting(Header::key).contains(TRACE_PARENT_HEADER);
             assertThat(event.getTransactionId()).isEqualTo(transactionId);
             assertThat(event.getSourceAccount()).isEqualTo("111111");
             assertThat(event.getTargetAccount()).isEqualTo("222222");
@@ -123,6 +131,8 @@ class PaymentPublishingIntegrationTest {
 
         PrometheusText scrape = scrape();
 
+        assertThat(scrape.sum("payments_publish_seconds_count", "outcome=\"success\"")).isGreaterThanOrEqualTo(1.0);
+        assertThat(scrape.sum("payments_accepted_total", "payment_method=\"pix\"")).isGreaterThanOrEqualTo(1.0);
         assertThat(scrape.hasSeries("jvm_memory_used_bytes", "application=\"payment-producer-api\"")).isTrue();
         assertThat(scrape.hasSeries("hikaricp_connections_active")).isTrue();
         assertThat(scrape.hasSeries("spring_data_repository_invocations_seconds_count")).isTrue();

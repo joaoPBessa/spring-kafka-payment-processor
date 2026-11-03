@@ -24,12 +24,6 @@ class TestcontainersConfiguration {
 	}
 
 	@Bean
-	@ServiceConnection(name = "openzipkin/zipkin")
-	GenericContainer<?> zipkinContainer() {
-		return new GenericContainer<>(DockerImageName.parse("openzipkin/zipkin:latest")).withExposedPorts(9411);
-	}
-
-	@Bean
 	@ServiceConnection(name = "redis")
 	GenericContainer<?> redisContainer() {
 		return new GenericContainer<>(DockerImageName.parse("redis:7.2.15-alpine")).withExposedPorts(6379);
