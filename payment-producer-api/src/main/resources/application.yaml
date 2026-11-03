@@ -49,6 +49,7 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: io.apicurio.registry.serde.avro.AvroKafkaSerializer
       properties:
+        max.block.ms: 5000
         apicurio.registry.url: http://localhost:8080/apis/registry/v3
         apicurio.registry.auto-register: true
 
