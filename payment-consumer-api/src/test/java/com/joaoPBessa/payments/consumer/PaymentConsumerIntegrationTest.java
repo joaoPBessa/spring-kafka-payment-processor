@@ -3,7 +3,7 @@ package com.joaoPBessa.payments.consumer;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -16,6 +16,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.Header;
@@ -27,6 +28,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.kafka.autoconfigure.KafkaConnectionDetails;
 import org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfigureMetrics;
+import org.springframework.boot.micrometer.tracing.test.autoconfigure.AutoConfigureTracing;
 import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -50,8 +52,11 @@ import com.joaoPBessa.payments.consumer.services.PaymentPersistenceService;
 import com.joaopBessa.payments.common.avro.PaymentEvent;
 import com.joaopBessa.payments.common.observability.PrometheusText;
 
+import io.micrometer.tracing.Tracer;
+
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMetrics
+@AutoConfigureTracing
 @AutoConfigureTestRestTemplate
 @ActiveProfiles("test")
 @Import({ PostgresContainerConfiguration.class, KafkaInfrastructureConfiguration.class })
@@ -67,6 +72,12 @@ class PaymentConsumerIntegrationTest {
     private static final String COUNT_PAYMENTS = "SELECT count(*) FROM payment WHERE transaction_id = ?";
     private static final String SELECT_PAYMENT = "SELECT * FROM payment WHERE transaction_id = ?";
 
+    private static final String TRACE_PARENT_HEADER = "traceparent";
+    private static final String TRACE_PARENT_FORMAT = "00-%s-%s-01";
+    private static final String PERSISTED_METRIC = "payments_persisted_total";
+    private static final String DEAD_LETTERED_METRIC = "payments_dead_lettered_total";
+    private static final String FAILED_DELIVERIES_METRIC = "kafka_consumer_failed_deliveries_total";
+
     private static final String SOURCE_ACCOUNT = "300001";
     private static final String TARGET_ACCOUNT = "300002";
     private static final String UNKNOWN_ACCOUNT = "000000";
@@ -77,6 +88,9 @@ class PaymentConsumerIntegrationTest {
 
     @Autowired
     private TestRestTemplate restTemplate;
+
+    @Autowired
+    private Tracer tracer;
 
     @Autowired
     private KafkaConnectionDetails kafkaConnectionDetails;
@@ -110,6 +124,24 @@ class PaymentConsumerIntegrationTest {
 
     private PrometheusText scrape() {
         return new PrometheusText(restTemplate.getForObject("/actuator/prometheus", String.class));
+    }
+
+    private double counter(String metric, String... labels) {
+        return scrape().sum(metric, labels);
+    }
+
+    private void awaitCounterIncrease(double expectedIncrease, double before, String metric, String... labels) {
+        await().atMost(AWAIT_TIMEOUT).untilAsserted(
+                () -> assertThat(counter(metric, labels) - before).isEqualTo(expectedIncrease));
+    }
+
+    private String newTraceId() {
+        return UUID.randomUUID().toString().replace("-", "");
+    }
+
+    private Map<String, String> traceParent(String traceId) {
+        String spanId = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+        return Map.of(TRACE_PARENT_HEADER, TRACE_PARENT_FORMAT.formatted(traceId, spanId));
     }
 
     private PaymentEvent newEvent(String sourceAccount, BigDecimal amount) {
@@ -192,10 +224,13 @@ class PaymentConsumerIntegrationTest {
     @DisplayName("Should persist a valid event with every field")
     void shouldPersistValidEventWithEveryField() {
         PaymentEvent event = newEvent(SOURCE_ACCOUNT, AMOUNT);
+        double persistedBefore = counter(PERSISTED_METRIC, "result=\"success\"");
 
         publish(event);
         awaitPersisted(event.getTransactionId());
+        awaitCounterIncrease(1.0, persistedBefore, PERSISTED_METRIC, "result=\"success\"");
 
+        assertThat(scrape().hasSeries("spring_kafka_listener_seconds_count")).isTrue();
         Map<String, Object> row = jdbcTemplate.queryForMap(SELECT_PAYMENT, event.getTransactionId());
         assertThat(row.get("source_account")).isEqualTo(SOURCE_ACCOUNT);
         assertThat(row.get("target_account")).isEqualTo(TARGET_ACCOUNT);
@@ -211,11 +246,15 @@ class PaymentConsumerIntegrationTest {
     void shouldKeepSingleRowWhenSameEventIsDeliveredTwice() {
         PaymentEvent event = newEvent(SOURCE_ACCOUNT, AMOUNT);
         PaymentEvent marker = newEvent(SOURCE_ACCOUNT, AMOUNT);
+        double successBefore = counter(PERSISTED_METRIC, "result=\"success\"");
+        double duplicateBefore = counter(PERSISTED_METRIC, "result=\"duplicate\"");
 
         publish(event);
         publish(event);
         publish(marker);
         awaitPersisted(marker.getTransactionId());
+        awaitCounterIncrease(1.0, duplicateBefore, PERSISTED_METRIC, "result=\"duplicate\"");
+        awaitCounterIncrease(2.0, successBefore, PERSISTED_METRIC, "result=\"success\"");
 
         assertThat(countPayments(event.getTransactionId())).isEqualTo(1);
         assertThat(clients.pollDeadLetters(event.getTransactionId(), QUIET_WINDOW)).isEmpty();
@@ -225,9 +264,13 @@ class PaymentConsumerIntegrationTest {
     @DisplayName("Should dead-letter an event for an unknown account without retrying")
     void shouldDeadLetterEventForUnknownAccountWithoutRetrying() {
         PaymentEvent event = newEvent(UNKNOWN_ACCOUNT, AMOUNT);
+        double deadLetteredBefore = counter(DEAD_LETTERED_METRIC, "kind=\"event\"");
+        double failedBefore = counter(FAILED_DELIVERIES_METRIC);
 
         publish(event);
         ConsumerRecord<String, byte[]> deadLetter = awaitDeadLetters(event.getTransactionId()).get(0);
+        awaitCounterIncrease(1.0, deadLetteredBefore, DEAD_LETTERED_METRIC, "kind=\"event\"");
+        awaitCounterIncrease(1.0, failedBefore, FAILED_DELIVERIES_METRIC);
 
         assertThat(clients.deserialize(deadLetter.value())).isEqualTo(event);
         assertThat(deadLetter.key()).isEqualTo(event.getTransactionId());
@@ -245,9 +288,11 @@ class PaymentConsumerIntegrationTest {
     @DisplayName("Should dead-letter an event that violates the positive amount rule without retrying")
     void shouldDeadLetterEventThatViolatesPositiveAmountRuleWithoutRetrying() {
         PaymentEvent event = newEvent(SOURCE_ACCOUNT, new BigDecimal("0.00"));
+        double deadLetteredBefore = counter(DEAD_LETTERED_METRIC, "kind=\"event\"");
 
         publish(event);
         ConsumerRecord<String, byte[]> deadLetter = awaitDeadLetters(event.getTransactionId()).get(0);
+        awaitCounterIncrease(1.0, deadLetteredBefore, DEAD_LETTERED_METRIC, "kind=\"event\"");
 
         assertThat(header(deadLetter, KafkaHeaders.DLT_EXCEPTION_CAUSE_FQCN))
                 .isEqualTo(DataIntegrityViolationException.class.getName());
@@ -261,9 +306,13 @@ class PaymentConsumerIntegrationTest {
         PaymentEvent event = newEvent(SOURCE_ACCOUNT, AMOUNT);
         doThrow(new QueryTimeoutException("database unavailable"))
                 .when(paymentRepository).saveAndFlush(forTransaction(event.getTransactionId()));
+        double deadLetteredBefore = counter(DEAD_LETTERED_METRIC, "kind=\"event\"");
+        double failedBefore = counter(FAILED_DELIVERIES_METRIC);
 
         publish(event);
         ConsumerRecord<String, byte[]> deadLetter = awaitDeadLetters(event.getTransactionId()).get(0);
+        awaitCounterIncrease(1.0, deadLetteredBefore, DEAD_LETTERED_METRIC, "kind=\"event\"");
+        awaitCounterIncrease(properties.retry().maxAttempts(), failedBefore, FAILED_DELIVERIES_METRIC);
 
         assertThat(header(deadLetter, KafkaHeaders.DLT_EXCEPTION_CAUSE_FQCN))
                 .isEqualTo(QueryTimeoutException.class.getName());
@@ -281,9 +330,13 @@ class PaymentConsumerIntegrationTest {
                 .doThrow(new QueryTimeoutException("second failure"))
                 .doCallRealMethod()
                 .when(paymentPersistenceService).persist(eventForTransaction(event.getTransactionId()));
+        double failedBefore = counter(FAILED_DELIVERIES_METRIC);
+        double deadLetteredBefore = counter(DEAD_LETTERED_METRIC, "kind=\"event\"");
 
         publish(event);
         awaitPersisted(event.getTransactionId());
+        awaitCounterIncrease(2.0, failedBefore, FAILED_DELIVERIES_METRIC);
+        awaitCounterIncrease(0.0, deadLetteredBefore, DEAD_LETTERED_METRIC, "kind=\"event\"");
 
         verify(paymentPersistenceService, times(3)).persist(eventForTransaction(event.getTransactionId()));
         assertThat(clients.pollDeadLetters(event.getTransactionId(), QUIET_WINDOW)).isEmpty();
@@ -295,15 +348,46 @@ class PaymentConsumerIntegrationTest {
         String poisonKey = "poison-" + UUID.randomUUID();
         byte[] poisonPayload = "this is not an avro payload".getBytes(StandardCharsets.UTF_8);
         PaymentEvent validEvent = newEvent(SOURCE_ACCOUNT, AMOUNT);
+        double poisonBefore = counter(DEAD_LETTERED_METRIC, "kind=\"poison_pill\"");
 
         clients.sendRaw(poisonKey, poisonPayload);
         publish(validEvent);
         ConsumerRecord<String, byte[]> deadLetter = awaitDeadLetters(poisonKey).get(0);
         awaitPersisted(validEvent.getTransactionId());
+        awaitCounterIncrease(1.0, poisonBefore, DEAD_LETTERED_METRIC, "kind=\"poison_pill\"");
 
         assertThat(deadLetter.value()).isEqualTo(poisonPayload);
         assertThat(header(deadLetter, KafkaHeaders.DLT_EXCEPTION_FQCN)).isEqualTo(DeserializationException.class.getName());
         assertThat(deadLetter.headers().lastHeader(SerializationUtils.VALUE_DESERIALIZER_EXCEPTION_HEADER)).isNull();
+    }
+
+    @Test
+    @DisplayName("Should process an event under the trace of the producer that published it")
+    void shouldProcessEventUnderTheTraceOfThePublishingProducer() {
+        PaymentEvent event = newEvent(SOURCE_ACCOUNT, AMOUNT);
+        String traceId = newTraceId();
+        AtomicReference<String> processingTraceId = new AtomicReference<>();
+        doAnswer(invocation -> {
+            processingTraceId.set(tracer.currentSpan().context().traceId());
+            return invocation.callRealMethod();
+        }).when(paymentPersistenceService).persist(eventForTransaction(event.getTransactionId()));
+
+        clients.sendEvent(event.getTransactionId(), event, traceParent(traceId));
+        awaitPersisted(event.getTransactionId());
+
+        assertThat(processingTraceId.get()).isEqualTo(traceId);
+    }
+
+    @Test
+    @DisplayName("Should keep the trace id on the dead letter of a failed event")
+    void shouldKeepTraceIdOnTheDeadLetterOfAFailedEvent() {
+        PaymentEvent event = newEvent(UNKNOWN_ACCOUNT, AMOUNT);
+        String traceId = newTraceId();
+
+        clients.sendEvent(event.getTransactionId(), event, traceParent(traceId));
+        ConsumerRecord<String, byte[]> deadLetter = awaitDeadLetters(event.getTransactionId()).get(0);
+
+        assertThat(header(deadLetter, TRACE_PARENT_HEADER)).contains(traceId);
     }
 
 }

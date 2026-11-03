@@ -10,3 +10,7 @@ management:
   health:
     vault:
       enabled: false
+  tracing:
+    export:
+      zipkin:
+        enabled: false
