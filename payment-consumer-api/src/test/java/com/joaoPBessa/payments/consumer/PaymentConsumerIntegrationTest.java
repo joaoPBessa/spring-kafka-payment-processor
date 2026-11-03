@@ -26,10 +26,15 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.kafka.autoconfigure.KafkaConnectionDetails;
+import org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfigureMetrics;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.QueryTimeoutException;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.listener.ListenerExecutionFailedException;
 import org.springframework.kafka.support.KafkaHeaders;
@@ -44,7 +49,9 @@ import com.joaoPBessa.payments.consumer.repositories.PaymentRepository;
 import com.joaoPBessa.payments.consumer.services.PaymentPersistenceService;
 import com.joaopBessa.payments.common.avro.PaymentEvent;
 
-@SpringBootTest
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@AutoConfigureMetrics
+@AutoConfigureTestRestTemplate
 @ActiveProfiles("test")
 @Import({ PostgresContainerConfiguration.class, KafkaInfrastructureConfiguration.class })
 @DisplayName("Payment consumer (Kafka + Apicurio + Postgres integration)")
@@ -66,6 +73,9 @@ class PaymentConsumerIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private TestRestTemplate restTemplate;
 
     @Autowired
     private KafkaConnectionDetails kafkaConnectionDetails;
@@ -142,6 +152,24 @@ class PaymentConsumerIntegrationTest {
 
     private PaymentEvent eventForTransaction(String transactionId) {
         return argThat(event -> event != null && transactionId.equals(event.getTransactionId()));
+    }
+
+    @Test
+    @DisplayName("Should expose Prometheus metrics tagged with the application name")
+    void shouldExposePrometheusMetricsTaggedWithApplicationName() {
+        ResponseEntity<String> response = restTemplate.getForEntity("/actuator/prometheus", String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).contains("application=\"payment-consumer-api\"");
+    }
+
+    @Test
+    @DisplayName("Should report the application as healthy")
+    void shouldReportApplicationAsHealthy() {
+        ResponseEntity<String> response = restTemplate.getForEntity("/actuator/health", String.class);
+
+        assertThat(response.getStatusCode()).as(response.getBody()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).contains("\"status\":\"UP\"");
     }
 
     @Test
