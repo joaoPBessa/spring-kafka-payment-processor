@@ -1,6 +1,7 @@
 package com.joaoPBessa.payments.producer.config;
 
 import java.time.Duration;
+import java.util.Set;
 
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
@@ -32,6 +33,8 @@ public class RedisCacheConfig {
 
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(config)
+                .initialCacheNames(Set.of(ACCOUNT_NAME))
+                .enableStatistics()
                 .build();
     }
 }

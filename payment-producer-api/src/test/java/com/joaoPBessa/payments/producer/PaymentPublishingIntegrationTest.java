@@ -141,6 +141,20 @@ class PaymentPublishingIntegrationTest {
     }
 
     @Test
+    @DisplayName("Should count account lookups served from the cache")
+    void shouldCountAccountLookupsServedFromTheCache() {
+        createActiveAccount("555551");
+        restTemplate.getForEntity("/api/v1/accounts/555551", String.class);
+        double hitsBefore = scrape().sum("cache_gets_total", "cache=\"accounts\"", "result=\"hit\"");
+
+        restTemplate.getForEntity("/api/v1/accounts/555551", String.class);
+
+        double hitsAfter = scrape().sum("cache_gets_total", "cache=\"accounts\"", "result=\"hit\"");
+        assertThat(hitsAfter - hitsBefore).isEqualTo(1.0);
+        assertThat(scrape().hasSeries("cache_gets_total", "cache=\"accounts\"", "result=\"miss\"")).isTrue();
+    }
+
+    @Test
     @DisplayName("Should report the application as healthy")
     void shouldReportApplicationAsHealthy() {
         ResponseEntity<String> response = restTemplate.getForEntity("/actuator/health", String.class);
