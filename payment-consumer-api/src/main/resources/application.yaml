@@ -46,6 +46,10 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+    data:
+      repository:
+        autotime:
+          percentiles-histogram: true
   tracing:
     sampling:
       probability: 1.0
