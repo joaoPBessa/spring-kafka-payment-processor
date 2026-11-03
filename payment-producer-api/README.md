@@ -98,7 +98,7 @@ All endpoints are versioned under `/api/v1`.
 
 - **Slice tests** (`@WebMvcTest`) for both controllers: `AccountControllerTest` (15 tests), `PaymentControllerTest` (14 tests).
 - **Unit tests**: `AccountServiceTest` (9 tests), `PaymentServiceTest` (5 tests) — plain Mockito, no Spring context.
-- **Integration tests**: `PaymentProducerApiApplicationTests` boots the full context against Testcontainers-managed Kafka and Zipkin containers; `PaymentPublishingIntegrationTest` (2 tests) publishes over real HTTP and confirms the exact Avro event round-trips through a real Kafka broker and Apicurio Registry.
+- **Integration tests**: `PaymentProducerApiApplicationTests` boots the full context against Testcontainers-managed Kafka, Redis, Zipkin and Apicurio containers (the registry URL reaches the context through a `DynamicPropertyRegistrar`, so the dynamic port is wired automatically); `PaymentPublishingIntegrationTest` (2 tests) publishes over real HTTP and confirms the exact Avro event round-trips through a real Kafka broker and Apicurio Registry.
 
 ```bash
 mvn test      # unit + slice tests
@@ -108,4 +108,3 @@ mvn verify    # also runs the Testcontainers-backed integration test (requires D
 ## Roadmap
 
 - Wire up custom Micrometer metrics and dashboards on top of the observability dependencies already in place.
-- `TestPaymentProducerApiApplication`'s Apicurio Testcontainers bean has no `@ServiceConnection` (Spring Boot ships no `ConnectionDetails` factory for Apicurio), so its dynamic port isn't auto-wired for local dev — `docker-compose.yml`'s fixed port remains the primary local path.
