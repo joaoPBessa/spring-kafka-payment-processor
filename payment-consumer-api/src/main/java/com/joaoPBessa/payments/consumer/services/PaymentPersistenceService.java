@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 
 import com.joaoPBessa.payments.consumer.domain.entities.Payment;
 import com.joaoPBessa.payments.consumer.mappers.PaymentEventMapper;
+import com.joaoPBessa.payments.consumer.metrics.PaymentConsumerMetrics;
 import com.joaoPBessa.payments.consumer.repositories.PaymentRepository;
 import com.joaopBessa.payments.common.avro.PaymentEvent;
 
@@ -18,24 +19,28 @@ public class PaymentPersistenceService {
 
 	private final PaymentRepository paymentRepository;
 	private final PaymentEventMapper paymentEventMapper;
+	private final PaymentConsumerMetrics metrics;
 
 	public void persist(PaymentEvent event) {
 		String transactionId = event.getTransactionId();
 
 		if (paymentRepository.existsByTransactionId(transactionId)) {
 			logAlreadyPersisted(transactionId);
+			metrics.duplicateIgnored();
 			return;
 		}
 
 		Payment payment = paymentEventMapper.toEntity(event);
 		try {
 			paymentRepository.saveAndFlush(payment);
+			metrics.paymentPersisted();
 			log.info("Payment persisted. Transaction id: {}", transactionId);
 		} catch (DataIntegrityViolationException e) {
 			if (!paymentRepository.existsByTransactionId(transactionId)) {
 				throw e;
 			}
 			logAlreadyPersisted(transactionId);
+			metrics.duplicateIgnored();
 		}
 	}
 

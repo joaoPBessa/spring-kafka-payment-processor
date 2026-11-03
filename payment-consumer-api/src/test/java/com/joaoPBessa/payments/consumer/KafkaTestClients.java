@@ -1,5 +1,6 @@
 package com.joaoPBessa.payments.consumer;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -57,7 +58,13 @@ public class KafkaTestClients implements AutoCloseable {
 	}
 
 	public void sendEvent(String key, PaymentEvent event) {
-		send(eventProducer, new ProducerRecord<>(eventsTopic, key, event));
+		sendEvent(key, event, Map.of());
+	}
+
+	public void sendEvent(String key, PaymentEvent event, Map<String, String> headers) {
+		ProducerRecord<String, PaymentEvent> record = new ProducerRecord<>(eventsTopic, key, event);
+		headers.forEach((name, value) -> record.headers().add(name, value.getBytes(StandardCharsets.UTF_8)));
+		send(eventProducer, record);
 	}
 
 	public void sendRaw(String key, byte[] payload) {

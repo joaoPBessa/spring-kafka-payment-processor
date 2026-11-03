@@ -1,6 +1,6 @@
 # Payment Consumer API
 
-The Spring Boot service that closes the payment pipeline: it consumes the Avro `PaymentEvent`s published by `payment-producer-api`, stores each payment in Postgres, and sends anything it cannot store to a Dead Letter Topic (DLT). It has no web layer, so it does not compete for a port with the producer or with Apicurio.
+The Spring Boot service that closes the payment pipeline: it consumes the Avro `PaymentEvent`s published by `payment-producer-api`, stores each payment in Postgres, and sends anything it cannot store to a Dead Letter Topic (DLT). Its only HTTP surface is Actuator on port 8082 (no controllers), so it does not compete for a port with the producer (8081) or with Apicurio (8080).
 
 ## How it works
 
@@ -15,6 +15,19 @@ payment.events ──► PaymentEventListener ──► PaymentPersistenceServic
 - **Integrity in the database:** the `PAYMENT` table (Flyway `V3`) has a unique transaction id, foreign keys from both accounts to `ACCOUNT(NUMBER)` and a positive-amount check, so these rules hold no matter who writes the row. An account that disappears between publish and consume therefore ends up in the DLT instead of producing an orphan payment. A soft-deleted (inactive) account still exists, so a payment to it is accepted.
 - **Retry and DLT:** failures are retried in place (ordering is preserved) with an exponential, bounded backoff, then published to `payment.events.DLT`. `DataIntegrityViolationException` and deserialization errors are never retried because repeating them cannot succeed.
 - **DLT contents:** valid events are re-serialized through Apicurio; poison pills keep their original bytes. The standard `kafka_dlt-*` headers carry the original topic, partition, offset and the exception class, message and stack trace.
+
+## Observability
+
+The consumer exposes Actuator on port **8082** (`/actuator/health`, `/actuator/prometheus`); it has no controllers, only that endpoint set. Besides the standard JVM, Hikari, repository and Kafka listener/client metrics, it publishes:
+
+| Metric | Meaning |
+|---|---|
+| `payments_persisted_total{result}` | Events processed, `success` or `duplicate` |
+| `kafka_consumer_failed_deliveries_total` | Failed processing attempts, retries included |
+| `payments_dead_lettered_total{kind}` | Records sent to the DLT, `event` or `poison_pill` |
+| `payments_dead_letter_failures_total{kind}` | Records that could not be published to the DLT |
+
+Traces continue from the producer: the Kafka listener and the dead letter sends are observed, so the `traceparent` header travels from the HTTP request through the topic, the consumer and the DLT. Run with `-Dspring-boot.run.profiles=json-logs` for ECS JSON logs that carry the trace id. The dashboards and the Zipkin view are described in the [root README](../README.md#observability).
 
 A prolonged outage of the database or the registry will move the records it touches into the DLT, so the DLT is meant to be replayable. A replay tool is not part of this module yet.
 

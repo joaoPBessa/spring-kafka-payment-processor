@@ -5,3 +5,12 @@ app:
       initial-interval: 50ms
       multiplier: 1.5
       max-interval: 200ms
+
+management:
+  health:
+    vault:
+      enabled: false
+  tracing:
+    export:
+      zipkin:
+        enabled: false

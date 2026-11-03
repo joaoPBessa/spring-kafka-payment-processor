@@ -24,6 +24,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.apache.kafka.common.KafkaException;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 
@@ -32,8 +33,12 @@ import com.joaoPBessa.payments.producer.api.dto.response.AccountResponseDTO;
 import com.joaoPBessa.payments.producer.config.KafkaProducerProperties;
 import com.joaoPBessa.payments.producer.exceptions.AccountNotFoundException;
 import com.joaoPBessa.payments.producer.exceptions.PaymentPublishException;
+import com.joaoPBessa.payments.producer.metrics.PaymentMetrics;
+import com.joaoPBessa.payments.producer.metrics.PublishOutcome;
 import com.joaopBessa.payments.common.avro.PaymentEvent;
 import com.joaopBessa.payments.common.domain.PaymentMethod;
+
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("PaymentService")
@@ -51,11 +56,33 @@ class PaymentServiceTest {
     @Captor
     private ArgumentCaptor<PaymentEvent> eventCaptor;
 
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+    private final PaymentMetrics paymentMetrics = new PaymentMetrics(meterRegistry);
+
+    private long publishCount(PublishOutcome outcome) {
+        return meterRegistry.get(PaymentMetrics.PUBLISH_TIMER)
+                .tag(PaymentMetrics.OUTCOME_TAG, outcome.tagValue()).timer().count();
+    }
+
+    private double acceptedCount(PaymentMethod method) {
+        return meterRegistry.get(PaymentMetrics.ACCEPTED_COUNTER)
+                .tag(PaymentMetrics.PAYMENT_METHOD_TAG, method.getValue()).counter().count();
+    }
+
+    private void assertNothingWasPublished() {
+        for (PublishOutcome outcome : PublishOutcome.values()) {
+            assertThat(publishCount(outcome)).isZero();
+        }
+        for (PaymentMethod method : PaymentMethod.values()) {
+            assertThat(acceptedCount(method)).isZero();
+        }
+    }
+
     private PaymentService serviceWithTimeout(Duration timeout) {
         var properties = new KafkaProducerProperties(
                 new KafkaProducerProperties.Topics(TOPIC),
                 new KafkaProducerProperties.Producer(timeout));
-        return new PaymentService(paymentEventKafkaTemplate, properties, accountService);
+        return new PaymentService(paymentEventKafkaTemplate, properties, accountService, paymentMetrics);
     }
 
     private void stubBothAccountsExist(String sourceAccount, String targetAccount) {
@@ -91,6 +118,10 @@ class PaymentServiceTest {
         verifyNoMoreInteractions(accountService);
         verify(paymentEventKafkaTemplate, times(1)).send(TOPIC, "123456", publishedEvent);
         verifyNoMoreInteractions(paymentEventKafkaTemplate);
+        assertThat(publishCount(PublishOutcome.SUCCESS)).isEqualTo(1);
+        assertThat(publishCount(PublishOutcome.TIMEOUT)).isZero();
+        assertThat(publishCount(PublishOutcome.ERROR)).isZero();
+        assertThat(acceptedCount(PaymentMethod.PIX)).isEqualTo(1.0);
     }
 
     @Test
@@ -123,6 +154,45 @@ class PaymentServiceTest {
                 .hasCauseInstanceOf(java.util.concurrent.TimeoutException.class);
 
         verify(paymentEventKafkaTemplate, times(1)).send(TOPIC, "123456", eventCaptor.getValue());
+        assertThat(publishCount(PublishOutcome.TIMEOUT)).isEqualTo(1);
+        assertThat(publishCount(PublishOutcome.SUCCESS)).isZero();
+        assertThat(acceptedCount(PaymentMethod.PIX)).isZero();
+    }
+
+    @Test
+    @DisplayName("publishPayment -> Failure: Should record an error and throw PaymentPublishException when the send future fails")
+    void shouldRecordErrorWhenSendFutureFails() {
+        var request = new PaymentRequestDTO("123456", "654321", new BigDecimal("150.75"), "usd", PaymentMethod.PIX);
+        stubBothAccountsExist("123456", "654321");
+        var failed = CompletableFuture.<SendResult<String, PaymentEvent>>failedFuture(new KafkaException("broker rejected"));
+
+        when(paymentEventKafkaTemplate.send(eq(TOPIC), eq("123456"), eventCaptor.capture())).thenReturn(failed);
+
+        assertThatThrownBy(() -> serviceWithTimeout(Duration.ofSeconds(5)).publishPayment(request))
+                .isInstanceOf(PaymentPublishException.class)
+                .hasCauseInstanceOf(java.util.concurrent.ExecutionException.class);
+
+        verify(paymentEventKafkaTemplate, times(1)).send(TOPIC, "123456", eventCaptor.getValue());
+        assertThat(publishCount(PublishOutcome.ERROR)).isEqualTo(1);
+        assertThat(acceptedCount(PaymentMethod.PIX)).isZero();
+    }
+
+    @Test
+    @DisplayName("publishPayment -> Failure: Should translate a synchronous send failure into PaymentPublishException")
+    void shouldTranslateSynchronousSendFailureIntoPaymentPublishException() {
+        var request = new PaymentRequestDTO("123456", "654321", new BigDecimal("150.75"), "usd", PaymentMethod.PIX);
+        stubBothAccountsExist("123456", "654321");
+        var serializationFailure = new KafkaException("could not serialize the event");
+
+        when(paymentEventKafkaTemplate.send(eq(TOPIC), eq("123456"), eventCaptor.capture())).thenThrow(serializationFailure);
+
+        assertThatThrownBy(() -> serviceWithTimeout(Duration.ofSeconds(5)).publishPayment(request))
+                .isInstanceOf(PaymentPublishException.class)
+                .hasCause(serializationFailure);
+
+        verify(paymentEventKafkaTemplate, times(1)).send(TOPIC, "123456", eventCaptor.getValue());
+        assertThat(publishCount(PublishOutcome.ERROR)).isEqualTo(1);
+        assertThat(acceptedCount(PaymentMethod.PIX)).isZero();
     }
 
     @Test
@@ -139,6 +209,7 @@ class PaymentServiceTest {
         verify(accountService, times(1)).findByNumber("123456");
         verifyNoMoreInteractions(accountService);
         verifyNoInteractions(paymentEventKafkaTemplate);
+        assertNothingWasPublished();
     }
 
     @Test
@@ -157,6 +228,7 @@ class PaymentServiceTest {
         verify(accountService, times(1)).findByNumber("654321");
         verifyNoMoreInteractions(accountService);
         verifyNoInteractions(paymentEventKafkaTemplate);
+        assertNothingWasPublished();
     }
 
 }

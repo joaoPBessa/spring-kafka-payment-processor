@@ -1,8 +1,9 @@
+server:
+  port: 8082
+
 spring:
   application:
     name: payment-consumer-api
-  main:
-    web-application-type: none
 
   datasource:
     hikari:
@@ -17,6 +18,12 @@ spring:
     locations: classpath:db/migration
 
   kafka:
+    admin:
+      operation-timeout: 5s
+    template:
+      observation-enabled: true
+    listener:
+      observation-enabled: true
     consumer:
       group-id: payment-persistence
       auto-offset-reset: earliest
@@ -30,6 +37,22 @@ spring:
       properties:
         apicurio.registry.url: http://localhost:8080/apis/registry/v3
         apicurio.registry.auto-register: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    data:
+      repository:
+        autotime:
+          percentiles-histogram: true
+  tracing:
+    sampling:
+      probability: 1.0
 
 app:
   kafka:

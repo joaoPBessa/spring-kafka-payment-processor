@@ -10,9 +10,12 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.core.MicrometerProducerListener;
 import org.springframework.kafka.core.ProducerFactory;
 
 import com.joaopBessa.payments.common.avro.PaymentEvent;
+
+import io.micrometer.core.instrument.MeterRegistry;
 
 @Configuration
 @EnableConfigurationProperties(KafkaProducerProperties.class)
@@ -20,17 +23,21 @@ public class KafkaProducerConfig {
 
 	@Bean
 	public ProducerFactory<String, PaymentEvent> paymentEventProducerFactory(
-			KafkaProperties kafkaProperties, KafkaConnectionDetails connectionDetails) {
+			KafkaProperties kafkaProperties, KafkaConnectionDetails connectionDetails, MeterRegistry meterRegistry) {
 		Map<String, Object> producerProperties = kafkaProperties.buildProducerProperties();
 		producerProperties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG,
 				connectionDetails.getProducer().getBootstrapServers());
-		return new DefaultKafkaProducerFactory<>(producerProperties);
+		DefaultKafkaProducerFactory<String, PaymentEvent> factory = new DefaultKafkaProducerFactory<>(producerProperties);
+		factory.addListener(new MicrometerProducerListener<>(meterRegistry));
+		return factory;
 	}
 
 	@Bean
 	public KafkaTemplate<String, PaymentEvent> paymentEventKafkaTemplate(
 			ProducerFactory<String, PaymentEvent> paymentEventProducerFactory) {
-		return new KafkaTemplate<>(paymentEventProducerFactory);
+		KafkaTemplate<String, PaymentEvent> template = new KafkaTemplate<>(paymentEventProducerFactory);
+		template.setObservationEnabled(true);
+		return template;
 	}
 
 }

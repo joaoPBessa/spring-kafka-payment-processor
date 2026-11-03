@@ -11,3 +11,12 @@ spring:
     show-sql: true
   flyway:
     enabled: false
+
+management:
+  health:
+    vault:
+      enabled: false
+  tracing:
+    export:
+      zipkin:
+        enabled: false

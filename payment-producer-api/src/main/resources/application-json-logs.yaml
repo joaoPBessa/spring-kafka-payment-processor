@@ -1,0 +1,12 @@
+logging:
+  structured:
+    format:
+      console: ecs
+
+spring:
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        highlight_sql: false
+        format_sql: false

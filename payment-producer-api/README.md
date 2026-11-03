@@ -11,7 +11,7 @@ The Spring Boot service in this repository: an account-management REST API and a
 - **Messaging:** Apache Kafka broker + Apicurio Registry (Avro), both provisioned via `docker-compose.yml`; synchronous producer in `PaymentService`
 - **Secrets:** HashiCorp Vault (Spring Cloud Vault)
 - **Caching:** Redis (Spring Data Redis)
-- **Observability:** Spring Boot Actuator, Micrometer tracing (Brave), Zipkin — dependencies are in place, but no custom metrics or dashboards are configured yet
+- **Observability:** Spring Boot Actuator, Micrometer with a Prometheus registry, tracing (Brave) exported to Zipkin, Grafana dashboards, `json-logs` profile for structured logs
 - **Testing:** JUnit 5/6, Mockito, AssertJ, Testcontainers (Kafka, Zipkin), H2
 
 ## Architecture Highlights
@@ -92,7 +92,18 @@ All endpoints are versioned under `/api/v1`.
 
 ## Observability
 
-`spring-boot-starter-actuator`, Micrometer tracing (Brave), and Zipkin are on the classpath, but nothing beyond Spring Boot's defaults is configured — no custom metrics, no dashboards. Wiring these up is part of the [roadmap](#roadmap).
+`/actuator/health` and `/actuator/prometheus` are exposed on the application port (8081). Every meter carries an `application` tag, HTTP request histograms include 0.5 s and 2 s buckets (the Apdex thresholds), and traces are fully sampled and sent to Zipkin. `/actuator/**` calls are excluded from metrics and traces.
+
+Custom metrics:
+
+| Metric | Meaning |
+|---|---|
+| `payments_publish_seconds{outcome}` | Time until the broker confirms the event; `outcome` is `success`, `timeout` or `error` |
+| `payments_accepted_total{payment_method}` | Payments accepted and published |
+| `payments_amount` | Distribution of the accepted amounts |
+| `cache_gets_total{cache="accounts",result}` | Account cache hits and misses |
+
+The Kafka template is observed, so the trace context travels to the consumer in the `traceparent` header. Run with `-Dspring-boot.run.profiles=json-logs` for ECS JSON logs (SQL printing is switched off in that profile so every line stays JSON). Dashboards, Prometheus and Zipkin are described in the [root README](../README.md#observability).
 
 ## Testing
 
@@ -107,4 +118,4 @@ mvn verify    # also runs the Testcontainers-backed integration test (requires D
 
 ## Roadmap
 
-- Wire up custom Micrometer metrics and dashboards on top of the observability dependencies already in place.
+- Alerting on top of the metrics and a Kafka monitoring UI are not part of the stack yet.
