@@ -18,6 +18,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
+import javax.sql.DataSource;
+
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.Header;
 import org.junit.jupiter.api.AfterEach;
@@ -59,7 +61,8 @@ import io.micrometer.tracing.Tracer;
 @AutoConfigureTracing
 @AutoConfigureTestRestTemplate
 @ActiveProfiles("test")
-@Import({ PostgresContainerConfiguration.class, KafkaInfrastructureConfiguration.class })
+@Import({ PostgresContainerConfiguration.class, ConsumerDatabaseRoleConfiguration.class,
+        KafkaInfrastructureConfiguration.class })
 @DisplayName("Payment consumer (Kafka + Apicurio + Postgres integration)")
 class PaymentConsumerIntegrationTest {
 
@@ -71,6 +74,7 @@ class PaymentConsumerIntegrationTest {
             "INSERT INTO account (id, number, name) VALUES (?, ?, ?) ON CONFLICT (number) DO NOTHING";
     private static final String COUNT_PAYMENTS = "SELECT count(*) FROM payment WHERE transaction_id = ?";
     private static final String SELECT_PAYMENT = "SELECT * FROM payment WHERE transaction_id = ?";
+    private static final String CURRENT_USER = "SELECT current_user";
 
     private static final String TRACE_PARENT_HEADER = "traceparent";
     private static final String TRACE_PARENT_FORMAT = "00-%s-%s-01";
@@ -84,7 +88,10 @@ class PaymentConsumerIntegrationTest {
     private static final BigDecimal AMOUNT = new BigDecimal("150.75");
 
     @Autowired
-    private JdbcTemplate jdbcTemplate;
+    private JdbcTemplate adminJdbcTemplate;
+
+    @Autowired
+    private DataSource applicationDataSource;
 
     @Autowired
     private TestRestTemplate restTemplate;
@@ -111,8 +118,8 @@ class PaymentConsumerIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        jdbcTemplate.update(INSERT_ACCOUNT, UUID.randomUUID(), SOURCE_ACCOUNT, "Source");
-        jdbcTemplate.update(INSERT_ACCOUNT, UUID.randomUUID(), TARGET_ACCOUNT, "Target");
+        adminJdbcTemplate.update(INSERT_ACCOUNT, UUID.randomUUID(), SOURCE_ACCOUNT, "Source");
+        adminJdbcTemplate.update(INSERT_ACCOUNT, UUID.randomUUID(), TARGET_ACCOUNT, "Target");
         clients = new KafkaTestClients(kafkaConnectionDetails.getProducer().getBootstrapServers(), registryUrl,
                 properties.topics().paymentEvents(), properties.topics().paymentEventsDlt());
     }
@@ -161,7 +168,7 @@ class PaymentConsumerIntegrationTest {
     }
 
     private int countPayments(String transactionId) {
-        return jdbcTemplate.queryForObject(COUNT_PAYMENTS, Integer.class, transactionId);
+        return adminJdbcTemplate.queryForObject(COUNT_PAYMENTS, Integer.class, transactionId);
     }
 
     private void awaitPersisted(String transactionId) {
@@ -189,6 +196,14 @@ class PaymentConsumerIntegrationTest {
 
     private PaymentEvent eventForTransaction(String transactionId) {
         return argThat(event -> event != null && transactionId.equals(event.getTransactionId()));
+    }
+
+    @Test
+    @DisplayName("Should run the application under the consumer database role")
+    void shouldRunApplicationUnderConsumerDatabaseRole() {
+        String databaseUser = new JdbcTemplate(applicationDataSource).queryForObject(CURRENT_USER, String.class);
+
+        assertThat(databaseUser).isEqualTo(ConsumerDatabaseRoleConfiguration.CONSUMER_ROLE);
     }
 
     @Test
@@ -231,7 +246,7 @@ class PaymentConsumerIntegrationTest {
         awaitCounterIncrease(1.0, persistedBefore, PERSISTED_METRIC, "result=\"success\"");
 
         assertThat(scrape().hasSeries("spring_kafka_listener_seconds_count")).isTrue();
-        Map<String, Object> row = jdbcTemplate.queryForMap(SELECT_PAYMENT, event.getTransactionId());
+        Map<String, Object> row = adminJdbcTemplate.queryForMap(SELECT_PAYMENT, event.getTransactionId());
         assertThat(row.get("source_account")).isEqualTo(SOURCE_ACCOUNT);
         assertThat(row.get("target_account")).isEqualTo(TARGET_ACCOUNT);
         assertThat((BigDecimal) row.get("amount")).isEqualByComparingTo(AMOUNT);
