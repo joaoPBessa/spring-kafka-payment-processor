@@ -4,6 +4,8 @@ server:
 spring:
   application:
     name: payment-consumer-api
+  jackson:
+    property-naming-strategy: SNAKE_CASE
 
   datasource:
     hikari:
