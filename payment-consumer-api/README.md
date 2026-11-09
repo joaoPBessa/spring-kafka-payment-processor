@@ -46,11 +46,12 @@ The properties are validated at startup (`max-attempts >= 1`, `multiplier >= 1`,
 ## Running locally
 
 ```bash
-docker compose up -d                 # Postgres, Redis, Vault, Kafka, Apicurio
+docker compose up -d --wait          # Postgres, db-migrate, Redis, Vault, Kafka, Apicurio
+docker compose ps -a db-migrate      # must show "Exited (0)"
 mvn -pl payment-consumer-api spring-boot:run
 ```
 
-The consumer reads its database credentials from Vault, like the producer, and runs the Flyway migrations on startup (safe alongside the producer: Flyway takes a database lock). Publish a payment through the producer (`POST /api/v1/payments`) and the row appears in `payment.payment`. To inspect the DLT:
+The consumer has its own database role, `payment-consumer-app`, read from its own Vault secret (`secret/payment-consumer-api`). The role can only `SELECT` and `INSERT` on `payment.payment`. It does not run Flyway: the `db-migrate` service applies the migrations, so start the application after it has finished. `init-db.sql` runs only on an empty volume; to pick up a new role on an existing setup, recreate the Postgres volume (`docker compose rm -sf postgres && docker volume rm spring-kafka-payment-processor_postgres_data`). Publish a payment through the producer (`POST /api/v1/payments`) and the row appears in `payment.payment`. To inspect the DLT:
 
 ```bash
 docker exec payment-kafka /opt/kafka/bin/kafka-console-consumer.sh \

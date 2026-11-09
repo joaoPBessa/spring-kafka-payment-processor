@@ -13,9 +13,7 @@ spring:
     hibernate:
       ddl-auto: validate
   flyway:
-    enabled: true
-    schemas: payment
-    locations: classpath:db/migration
+    enabled: false
 
   kafka:
     admin:
@@ -71,8 +69,6 @@ spring:
     activate:
       on-profile: '!test'
   datasource:
-    url: jdbc:postgresql://localhost:5432/payments_db
-  flyway:
     url: jdbc:postgresql://localhost:5432/payments_db
   kafka:
     bootstrap-servers: localhost:9092

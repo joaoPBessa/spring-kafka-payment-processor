@@ -32,19 +32,21 @@ The Spring Boot service in this repository: an account-management REST API and a
 ### 1. Start local infrastructure
 
 ```bash
-docker-compose up -d
+docker compose up -d --wait
+docker compose ps -a db-migrate   # the one-shot migration must show "Exited (0)"
 ```
 
-This starts Postgres, Redis, Vault, Kafka, and Apicurio Registry (in-memory, non-persistent). The broker comes up with no topics pre-created — `payment.events` is created on first publish (`auto.create.topics.enable`, the broker's default).
+This starts Postgres, the one-shot `db-migrate` step, Redis, Vault, Kafka, and Apicurio Registry (in-memory, non-persistent). The broker comes up with no topics pre-created — `payment.events` is created on first publish (`auto.create.topics.enable`, the broker's default).
 
 > The credentials in `docker-compose.yml` are throwaway local-development values only — not meant for any real environment.
 
 ### 2. Database initialization
 
-Flyway owns schema versioning, split between a Docker bootstrap step and the migrations themselves:
+Flyway owns schema versioning, split between a Docker bootstrap step and the migrations themselves. The application never migrates the database and holds no admin credential:
 
-- **Infrastructure setup (automated):** `docker-compose up` runs `scripts/init-db.sql`, which creates the `payments_db` database, two distinct users (`payment-admin` for migrations, `payment-producer-app` for the application), and the `payment` schema with the appropriate grants.
-- **Schema migration:** on application startup, Flyway connects as `payment-admin` and runs the scripts in `payment-db-migration/src/main/resources/db/migration` (`V1__create_account_table.sql`, `V2__create_active_account_column.sql`).
+- **Infrastructure setup (automated):** `docker compose up` runs `scripts/init-db.sql` on an empty volume, which creates the `payments_db` database, three distinct users (`payment-admin` for migrations, `payment-producer-app` and `payment-consumer-app` for the applications), and the `payment` schema with the appropriate grants.
+- **Schema migration:** the `db-migrate` compose service (official Flyway image) connects as `payment-admin` and runs the scripts in `payment-db-migration/src/main/resources/db/migration`, including the grants that confine this application to `SELECT/INSERT/UPDATE/DELETE` on `ACCOUNT`.
+- **Credentials:** the application reads `payment-producer-app` from its own Vault secret, `secret/payment-producer-api` (seeded by `scripts/init-vault.sh`).
 
 ### 3. Run the application
 

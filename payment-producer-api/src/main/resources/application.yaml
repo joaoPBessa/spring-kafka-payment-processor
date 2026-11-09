@@ -32,12 +32,6 @@ spring:
       min-idle: 0
       max-wait: -1ms
 
-  flyway:
-    enabled: true
-    url: jdbc:postgresql://localhost:5432/payments_db
-    schemas: payment
-    locations: classpath:db/migration
-
   kafka:
     admin:
       operation-timeout: 5s
