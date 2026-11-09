@@ -9,8 +9,6 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: true
-  flyway:
-    enabled: false
 
 management:
   health:

@@ -12,10 +12,30 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d payments_db"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - payment-network
+
+  db-migrate:
+    image: flyway/flyway:11.14.1
+    container_name: payment-db-migrate
+    command: migrate
+    environment:
+      FLYWAY_URL: jdbc:postgresql://postgres:5432/payments_db
+      FLYWAY_USER: payment-admin
+      FLYWAY_PASSWORD: "qU0+ketjd]65]q7D"
+      FLYWAY_SCHEMAS: payment
+      FLYWAY_LOCATIONS: filesystem:/flyway/sql
+      FLYWAY_CONNECT_RETRIES: 10
+    volumes:
+      - ./payment-db-migration/src/main/resources/db/migration:/flyway/sql:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
     networks:
       - payment-network
 
