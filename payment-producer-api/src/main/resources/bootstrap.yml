@@ -4,6 +4,7 @@ spring:
   
   cloud:
     vault:
+      application-name: payment-producer-api
       host: localhost
       port: 8200
       scheme: http

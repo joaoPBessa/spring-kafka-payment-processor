@@ -16,11 +16,16 @@ echo "📂 Enabling KV secrets engine version 2..."
 # If already enabled by dev mode, '|| true' prevents the script from breaking
 vault secrets enable -path=secret kv-v2 || true
 
-echo "🔑 Seeding Postgres secrets into Vault..."
-vault kv put secret/spring-kafka-payment-processor \
-  spring.datasource.username="postgres" \
-  spring.datasource.password="5@hbQqkGB<" \
-  spring.flyway.user="payment-admin" \
-  spring.flyway.password="qU0+ketjd]65]q7D"
+echo "🔑 Seeding per-application database credentials into Vault..."
+vault kv put secret/payment-producer-api \
+  spring.datasource.username="payment-producer-app" \
+  spring.datasource.password="K1SJdZqbkJyW^qM)"
+
+vault kv put secret/payment-consumer-api \
+  spring.datasource.username="payment-consumer-app" \
+  spring.datasource.password="Zx7mP4rQd9LkV2nT"
+
+echo "🧹 Removing the legacy shared secret..."
+vault kv metadata delete secret/spring-kafka-payment-processor || true
 
 echo "✅ Vault configuration completed successfully!"
