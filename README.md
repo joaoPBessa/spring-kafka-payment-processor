@@ -25,7 +25,7 @@ A multi-module payment-processing backend, built to explore account management a
 | [`payment-producer-api`](payment-producer-api/) | Spring Boot app | The actual service — REST API, JPA persistence, Redis cache, Vault-backed config. See its own [README](payment-producer-api/README.md) for endpoints and setup. |
 | [`payment-consumer-api`](payment-consumer-api/) | Spring Boot app (Actuator only, no controllers) | Consumes `payment.events`, writes each payment to Postgres exactly once, and dead-letters failures to `payment.events.DLT`. See its own [README](payment-consumer-api/README.md). |
 | `common-libraries` | jar | Shared domain types: the `PaymentMethod` enum and the `PaymentEvent` Avro schema (the Kafka wire contract), kept separate so both can be reused by future consumer modules. |
-| `payment-db-migration` | jar | Owns the Flyway SQL migrations and the `flyway-maven-plugin` binding, decoupled from the runtime app module so schema versioning doesn't require touching `payment-producer-api`. |
+| `payment-db-migration` | jar | Owns the Flyway SQL migrations and the `flyway-maven-plugin` binding. The `db-migrate` compose service applies them; the applications don't run Flyway. |
 
 ## Feature status
 
@@ -65,8 +65,11 @@ git clone https://github.com/joaoPBessa/spring-kafka-payment-processor.git
 cd spring-kafka-payment-processor
 
 # Start local infrastructure: Postgres, Redis, Vault, Kafka, Apicurio Registry,
-# and the observability stack (Prometheus, Grafana, Zipkin, Kafka exporter)
-docker-compose up -d
+# and the observability stack (Prometheus, Grafana, Zipkin, Kafka exporter).
+# The one-shot db-migrate service applies the Flyway migrations; each application
+# then connects with its own least-privilege database user from its own Vault secret.
+docker compose up -d --wait
+docker compose ps -a db-migrate   # must show "Exited (0)"
 ```
 
 > The credentials in `docker-compose.yml` are throwaway local-development values only — not meant for any real environment.
