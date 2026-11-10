@@ -8,6 +8,8 @@ spring:
     locations: classpath:db/migration
 
 app:
+  dlt-replay:
+    enabled: false
   kafka:
     retry:
       max-attempts: 3

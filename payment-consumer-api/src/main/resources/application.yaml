@@ -6,6 +6,9 @@ spring:
     name: payment-consumer-api
   jackson:
     property-naming-strategy: SNAKE_CASE
+  mvc:
+    problemdetails:
+      enabled: true
 
   datasource:
     hikari:
@@ -64,6 +67,12 @@ app:
       initial-interval: 1s
       multiplier: 2.0
       max-interval: 10s
+  dlt-replay:
+    enabled: true
+    cron: "0 0 3 * * *"
+    zone: UTC
+    max-batch-size: 500
+    send-timeout: 5s
 
 ---
 spring:

@@ -35,6 +35,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 
 import com.joaoPBessa.payments.consumer.config.KafkaConsumerProperties;
@@ -52,6 +53,7 @@ import tools.jackson.databind.json.JsonMapper;
 @Import({ PostgresContainerConfiguration.class, ConsumerDatabaseRoleConfiguration.class,
         KafkaInfrastructureConfiguration.class })
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("Dead letter endpoint (Kafka + Apicurio + Postgres integration)")
 class DeadLetterEndpointIntegrationTest {
 

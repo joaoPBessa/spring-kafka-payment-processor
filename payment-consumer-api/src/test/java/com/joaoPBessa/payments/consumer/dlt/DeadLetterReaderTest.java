@@ -178,4 +178,85 @@ class DeadLetterReaderTest {
         assertThat(consumer.closed()).isTrue();
     }
 
+    @Test
+    @DisplayName("Should ignore records that arrive after the read started")
+    void shouldIgnoreRecordsThatArriveAfterTheReadStarted() {
+        givenTopicWithPartitions(1);
+        givenPartition(0, 3);
+        givenRecordsAvailableOnPoll(sequentialRecords(0, 5));
+
+        assertThat(keys(reader.oldest())).containsExactly("key-0-0", "key-0-1", "key-0-2");
+    }
+
+    @Test
+    @DisplayName("Should list the pending messages ordered by partition and offset")
+    void shouldListThePendingMessagesOrderedByPartitionAndOffset() {
+        givenTopicWithPartitions(2);
+        givenPartition(0, 2);
+        givenPartition(1, 2);
+        givenRecordsAvailableOnPoll(List.of(
+                record(1, 0, BASE_TIMESTAMP),
+                record(0, 0, BASE_TIMESTAMP + 10),
+                record(1, 1, BASE_TIMESTAMP + 20),
+                record(0, 1, BASE_TIMESTAMP + 30)));
+
+        assertThat(keys(reader.pending(MAX_MESSAGES)))
+                .containsExactly("key-0-0", "key-0-1", "key-1-0", "key-1-1");
+    }
+
+    @Test
+    @DisplayName("Should cap the pending messages per partition")
+    void shouldCapThePendingMessagesPerPartition() {
+        givenTopicWithPartitions(2);
+        givenPartition(0, 5);
+        givenPartition(1, 2);
+        List<ConsumerRecord<String, byte[]>> records = new ArrayList<>(sequentialRecords(0, 5));
+        records.addAll(sequentialRecords(1, 2));
+        givenRecordsAvailableOnPoll(records);
+
+        assertThat(keys(reader.pending(3)))
+                .containsExactly("key-0-0", "key-0-1", "key-0-2", "key-1-0", "key-1-1");
+    }
+
+    @Test
+    @DisplayName("Should return nothing pending when the topic has no partitions yet")
+    void shouldReturnNothingPendingWhenTheTopicHasNoPartitionsYet() {
+        assertThat(reader.pending(MAX_MESSAGES)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should return nothing pending when the partitions are empty")
+    void shouldReturnNothingPendingWhenThePartitionsAreEmpty() {
+        givenTopicWithPartitions(1);
+        givenPartition(0, 0);
+
+        assertThat(reader.pending(MAX_MESSAGES)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should return every message when asked for all of them")
+    void shouldReturnEveryMessageWhenAskedForAllOfThem() {
+        givenTopicWithPartitions(1);
+        givenPartition(0, 25);
+        givenRecordsAvailableOnPoll(sequentialRecords(0, 25));
+
+        List<ConsumerRecord<String, byte[]>> everything = reader.all();
+
+        assertThat(everything).hasSize(25);
+        assertThat(everything.get(24).offset()).isEqualTo(24);
+    }
+
+    @Test
+    @DisplayName("Should close the consumer and report a Kafka failure while listing pending messages")
+    void shouldCloseTheConsumerAndReportAKafkaFailureWhileListingPendingMessages() {
+        givenTopicWithPartitions(1);
+        givenPartition(0, 1);
+        consumer.setPollException(new KafkaException("broker down"));
+
+        assertThatThrownBy(() -> reader.pending(MAX_MESSAGES))
+                .isInstanceOf(DeadLetterReadException.class)
+                .hasCauseInstanceOf(KafkaException.class);
+        assertThat(consumer.closed()).isTrue();
+    }
+
 }

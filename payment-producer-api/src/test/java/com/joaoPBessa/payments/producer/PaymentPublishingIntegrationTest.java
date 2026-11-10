@@ -114,6 +114,7 @@ class PaymentPublishingIntegrationTest {
             PaymentEvent event = record.value();
 
             assertThat(record.headers().toArray()).extracting(Header::key).contains(TRACE_PARENT_HEADER);
+            assertThat(record.key()).isEqualTo(transactionId);
             assertThat(event.getTransactionId()).isEqualTo(transactionId);
             assertThat(event.getSourceAccount()).isEqualTo("111111");
             assertThat(event.getTargetAccount()).isEqualTo("222222");
