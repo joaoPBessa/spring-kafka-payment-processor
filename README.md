@@ -41,7 +41,7 @@ A multi-module payment-processing backend, built to explore account management a
 - Testcontainers-backed integration tests alongside `@WebMvcTest`/unit tests (146 tests total, see [Testing](#testing)).
 
 ### Roadmap / In progress
-- Replaying the dead letter topic, a Kafka monitoring UI, and alerting on top of the metrics.
+- A Kafka monitoring UI and alerting on top of the metrics.
 
 ## Tech stack
 

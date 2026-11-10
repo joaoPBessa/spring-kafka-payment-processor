@@ -29,7 +29,7 @@ The consumer exposes Actuator on port **8082** (`/actuator/health`, `/actuator/p
 
 Traces continue from the producer: the Kafka listener and the dead letter sends are observed, so the `traceparent` header travels from the HTTP request through the topic, the consumer and the DLT. Run with `-Dspring-boot.run.profiles=json-logs` for ECS JSON logs that carry the trace id. The dashboards and the Zipkin view are described in the [root README](../README.md#observability).
 
-A prolonged outage of the database or the registry will move the records it touches into the DLT, so the DLT is meant to be replayable. A replay tool is not part of this module yet.
+A prolonged outage of the database or the registry will move the records it touches into the DLT, so the DLT is meant to be replayable: see [Replaying the DLT](#replaying-the-dlt).
 
 ## Configuration
 
@@ -40,8 +40,12 @@ A prolonged outage of the database or the registry will move the records it touc
 | `app.kafka.retry.max-attempts` | `4` | Total deliveries, including the first |
 | `app.kafka.retry.initial-interval` / `multiplier` / `max-interval` | `1s` / `2.0` / `10s` | Exponential backoff |
 | `spring.kafka.consumer.group-id` | `payment-persistence` | Consumer group |
+| `app.dlt-replay.enabled` | `true` | Turns the daily replay on or off (the endpoint always works) |
+| `app.dlt-replay.cron` / `zone` | `0 0 3 * * *` / `UTC` | When the daily replay runs (Spring cron, six fields) |
+| `app.dlt-replay.max-batch-size` | `500` | Most messages replayed per partition in one run |
+| `app.dlt-replay.send-timeout` | `5s` | How long to wait for the broker to confirm a replayed message or the truncation |
 
-The properties are validated at startup (`max-attempts >= 1`, `multiplier >= 1`, `initial-interval <= max-interval`, topic names not blank).
+The properties are validated at startup (`max-attempts >= 1`, `multiplier >= 1`, `initial-interval <= max-interval`, topic names not blank, a valid `cron`, `max-batch-size >= 1`).
 
 ## Running locally
 
@@ -96,12 +100,43 @@ docker exec payment-kafka /opt/kafka/bin/kafka-console-consumer.sh \
   --from-beginning --property print.headers=true
 ```
 
+## Replaying the DLT
+
+Once the cause of a failure is fixed (the missing account was registered, the database or the registry is back), the dead letters can be sent back to `payment.events`. A replay republishes the **original key, bytes and headers** (minus the `kafka_dlt-*` ones), so it also works for poison pills whose only problem was a registry outage. The pipeline is idempotent (a repeated `transaction_id` is skipped), so a message that is replayed twice never produces two payments.
+
+Events are published with the **`transaction_id` as the record key**, which is how a dead letter is found by id. Messages published before that change are keyed by the source account and cannot be replayed by id (they are still replayed by the daily job).
+
+**Daily replay.** Once a day (`app.dlt-replay.cron`, default 03:00 UTC) the consumer reads the DLT backlog, republishes it in offset order and then **deletes from the DLT what it replayed** (Kafka `deleteRecords`), so the DLT always holds only what is still pending and `GET /api/v1/dead-letters` shows exactly that. A message that fails again is dead-lettered again as a new record with the new error, and is retried the next day; there is no attempt limit yet. In a partition the run stops at the first message it cannot republish (nothing after it is deleted). At most `max-batch-size` messages per partition are replayed per run. There is no distributed lock, so run it on a single instance (a second one would only repeat the replay, harmlessly).
+
+**Forced replay.**
+
+```bash
+curl -X POST localhost:8082/api/v1/dead-letters/replay   -H 'Content-Type: application/json'   -d '{"transaction_ids": ["3640dcbd-e6d6-4a93-92ba-12844f3bcab6", "unknown-id"]}'
+```
+
+```json
+{
+  "results": [
+    { "transaction_id": "3640dcbd-e6d6-4a93-92ba-12844f3bcab6", "status": "replayed", "partition": 0, "offset": 3 },
+    { "transaction_id": "unknown-id", "status": "not_found", "partition": null, "offset": null }
+  ]
+}
+```
+
+- Takes 1 to 100 ids and answers `202` with one result per id, in the order requested: `replayed` (republished; `partition` and `offset` are where it was in the DLT), `not_found` (no dead letter has that key) or `failed` (the broker did not confirm). A `failed` id does not stop the others. `400` for an invalid body, `503` when the DLT cannot be read.
+- `202` means "sent back for processing", not "persisted": if it fails again it reappears in the DLT, and `payments_persisted_total` counts the successes.
+- If an id was dead-lettered more than once, the most recent record is replayed.
+- The forced replay **does not delete** anything (a record cannot be removed from the middle of a log): the message stays in the DLT until the next daily run, which sends it again (skipped as a duplicate) and then removes it.
+- Like the viewer, it has no authentication.
+
+Replays are counted in `payments_dead_letter_replayed_total{trigger="scheduled|manual",result="success|failure"}`.
+
 ## Testing
 
 ```bash
 mvn -pl payment-consumer-api -am verify   # requires Docker for Testcontainers
 ```
 
-- **Unit:** `PaymentEventMapperTest`, `PaymentPersistenceServiceTest`, `PaymentEventListenerTest`, `KafkaConsumerPropertiesTest`, `KafkaConsumerErrorHandlingConfigTest`, and for the DLT view `DeadLetterReaderTest` (Kafka `MockConsumer`), `DeadLetterPayloadDecoderTest`, `DeadLetterServiceTest` and `DeadLetterControllerTest` (`@WebMvcTest`).
+- **Unit:** `PaymentEventMapperTest`, `PaymentPersistenceServiceTest`, `PaymentEventListenerTest`, `KafkaConsumerPropertiesTest`, `KafkaConsumerErrorHandlingConfigTest`, and for the DLT view `DeadLetterReaderTest` (Kafka `MockConsumer`), `DeadLetterPayloadDecoderTest`, `DeadLetterServiceTest` `DeadLetterControllerTest` (`@WebMvcTest`), and for the replay `DeadLetterReplayerTest`, `DeadLetterTruncatorTest`, `DeadLetterReplayServiceTest`, `DeadLetterReplaySchedulerTest` and `DeadLetterReplayPropertiesTest`.
 - **Database (real Postgres):** `PaymentTableMigrationTest` applies V1–V3 and checks every constraint; `PaymentRepositoryTest` checks the mapping, which Hibernate also validates against the schema at startup.
-- **End to end (real Kafka, Apicurio, Postgres):** `PaymentConsumerIntegrationTest` covers a valid event, a duplicate, an unknown account, a non-positive amount, a transient failure that exhausts the retries, a transient failure that recovers, and a poison pill followed by a valid event. `DeadLetterEndpointIntegrationTest` has its own broker and checks the DLT view: empty, capped at the ten oldest in order with decoded payloads, and no consumer group left behind.
+- **End to end (real Kafka, Apicurio, Postgres):** `PaymentConsumerIntegrationTest` covers a valid event, a duplicate, an unknown account, a non-positive amount, a transient failure that exhausts the retries, a transient failure that recovers, and a poison pill followed by a valid event. `DeadLetterEndpointIntegrationTest` has its own broker and checks the DLT view: empty, capped at the ten oldest in order with decoded payloads, and no consumer group left behind. `DeadLetterReplayIntegrationTest` (own broker) covers the forced replay by id, the daily run that clears what it replayed and sends back what still fails, no `kafka_dlt-*` headers piling up, and the topic emptying once the cause is fixed.

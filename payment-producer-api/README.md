@@ -19,7 +19,7 @@ The Spring Boot service in this repository: an account-management REST API and a
 - **Dedicated schema:** the datasource targets a `payment` schema, separate from `public`.
 - **JPA auditing:** `created_at`/`updated_at` on `Account` are populated automatically via `@EnableJpaAuditing` and `@EntityListeners(AuditingEntityListener.class)` — no manual timestamp handling.
 - **Cache-aside:** account lookups are `@Cacheable`, with eviction on rename/delete — also reused by `PaymentService` to validate that both accounts on a payment exist before publishing anything.
-- **Schema-governed publishing:** `PaymentService` builds an Avro-generated `PaymentEvent` and publishes it synchronously via a typed `KafkaTemplate<String, PaymentEvent>`, so only schema-conformant events can ever reach the topic.
+- **Schema-governed publishing:** `PaymentService` builds an Avro-generated `PaymentEvent` and publishes it synchronously via a typed `KafkaTemplate<String, PaymentEvent>`, so only schema-conformant events can ever reach the topic. Each event is keyed by its `transaction_id`, which identifies it in the topic and in the consumer's dead letter topic.
 - **Centralized error handling:** a single `@RestControllerAdvice` maps validation, not-found, conflict, malformed-request, and publish-failure cases to consistent 400/404/409/503/500 responses.
 
 ## Getting Started
@@ -90,7 +90,7 @@ All endpoints are versioned under `/api/v1`.
 
 | Method | Endpoint | Description | Success | Errors |
 | :--- | :--- | :--- | :--- | :--- |
-| `POST` | `/api/v1/payments` | Validates the request, checks both accounts exist (cached), and publishes an Avro-encoded event to Kafka. Returns a generated transaction code. | `202` | `400`, `404`, `503` |
+| `POST` | `/api/v1/payments` | Validates the request, checks both accounts exist (cached), and publishes an Avro-encoded event to Kafka. Returns a generated transaction code (also the Kafka record key). | `202` | `400`, `404`, `503` |
 
 ## Observability
 
