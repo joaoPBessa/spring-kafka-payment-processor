@@ -37,6 +37,12 @@ class PaymentConsumerMetricsTest {
         return registry.get(PaymentConsumerMetrics.FAILED_DELIVERIES_COUNTER).counter().count();
     }
 
+    private double replays(ReplayTrigger trigger, String result) {
+        return registry.get(PaymentConsumerMetrics.REPLAYED_COUNTER)
+                .tag(PaymentConsumerMetrics.TRIGGER_TAG, trigger.tagValue())
+                .tag(PaymentConsumerMetrics.RESULT_TAG, result).counter().count();
+    }
+
     private Exception eventFailure() {
         return new ListenerExecutionFailedException("listener failed", new DataIntegrityViolationException("fk"));
     }
@@ -66,6 +72,29 @@ class PaymentConsumerMetricsTest {
 
         assertThat(persisted("success")).isEqualTo(2.0);
         assertThat(persisted("duplicate")).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("Should register the replay counters at zero for every trigger")
+    void shouldRegisterTheReplayCountersAtZeroForEveryTrigger() {
+        for (ReplayTrigger trigger : ReplayTrigger.values()) {
+            assertThat(replays(trigger, "success")).isZero();
+            assertThat(replays(trigger, "failure")).isZero();
+        }
+    }
+
+    @Test
+    @DisplayName("Should count replays apart by trigger and result")
+    void shouldCountReplaysApartByTriggerAndResult() {
+        metrics.deadLetterReplayed(ReplayTrigger.SCHEDULED);
+        metrics.deadLetterReplayed(ReplayTrigger.SCHEDULED);
+        metrics.deadLetterReplayed(ReplayTrigger.MANUAL);
+        metrics.deadLetterReplayFailed(ReplayTrigger.MANUAL);
+
+        assertThat(replays(ReplayTrigger.SCHEDULED, "success")).isEqualTo(2.0);
+        assertThat(replays(ReplayTrigger.SCHEDULED, "failure")).isZero();
+        assertThat(replays(ReplayTrigger.MANUAL, "success")).isEqualTo(1.0);
+        assertThat(replays(ReplayTrigger.MANUAL, "failure")).isEqualTo(1.0);
     }
 
     @Test
