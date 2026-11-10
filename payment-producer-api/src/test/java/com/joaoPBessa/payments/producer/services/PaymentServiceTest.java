@@ -56,6 +56,9 @@ class PaymentServiceTest {
     @Captor
     private ArgumentCaptor<PaymentEvent> eventCaptor;
 
+    @Captor
+    private ArgumentCaptor<String> keyCaptor;
+
     private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
     private final PaymentMetrics paymentMetrics = new PaymentMetrics(meterRegistry);
 
@@ -91,14 +94,14 @@ class PaymentServiceTest {
     }
 
     @Test
-    @DisplayName("publishPayment -> Success: Should publish the event keyed by source account and return the generated transaction id")
+    @DisplayName("publishPayment -> Success: Should publish the event keyed by its transaction id and return that id")
     void shouldPublishPaymentEventSuccessfully() {
         var request = new PaymentRequestDTO("123456", "654321", new BigDecimal("150.75"), "usd", PaymentMethod.PIX);
         stubBothAccountsExist("123456", "654321");
         SendResult<String, PaymentEvent> sendResult = mock();
         var future = CompletableFuture.completedFuture(sendResult);
 
-        when(paymentEventKafkaTemplate.send(eq(TOPIC), eq("123456"), eventCaptor.capture())).thenReturn(future);
+        when(paymentEventKafkaTemplate.send(eq(TOPIC), keyCaptor.capture(), eventCaptor.capture())).thenReturn(future);
 
         String transactionId = serviceWithTimeout(Duration.ofSeconds(5)).publishPayment(request);
 
@@ -106,6 +109,7 @@ class PaymentServiceTest {
 
         PaymentEvent publishedEvent = eventCaptor.getValue();
         assertThat(publishedEvent.getTransactionId()).isEqualTo(transactionId);
+        assertThat(keyCaptor.getValue()).isEqualTo(transactionId);
         assertThat(publishedEvent.getSourceAccount()).isEqualTo("123456");
         assertThat(publishedEvent.getTargetAccount()).isEqualTo("654321");
         assertThat(publishedEvent.getAmount()).isEqualByComparingTo("150.75");
@@ -116,7 +120,7 @@ class PaymentServiceTest {
         verify(accountService, times(1)).findByNumber("123456");
         verify(accountService, times(1)).findByNumber("654321");
         verifyNoMoreInteractions(accountService);
-        verify(paymentEventKafkaTemplate, times(1)).send(TOPIC, "123456", publishedEvent);
+        verify(paymentEventKafkaTemplate, times(1)).send(TOPIC, publishedEvent.getTransactionId(), publishedEvent);
         verifyNoMoreInteractions(paymentEventKafkaTemplate);
         assertThat(publishCount(PublishOutcome.SUCCESS)).isEqualTo(1);
         assertThat(publishCount(PublishOutcome.TIMEOUT)).isZero();
@@ -132,12 +136,12 @@ class PaymentServiceTest {
         SendResult<String, PaymentEvent> sendResult = mock();
         var future = CompletableFuture.completedFuture(sendResult);
 
-        when(paymentEventKafkaTemplate.send(eq(TOPIC), eq("123456"), eventCaptor.capture())).thenReturn(future);
+        when(paymentEventKafkaTemplate.send(eq(TOPIC), keyCaptor.capture(), eventCaptor.capture())).thenReturn(future);
 
         serviceWithTimeout(Duration.ofSeconds(5)).publishPayment(request);
 
         assertThat(eventCaptor.getValue().getAmount()).isEqualByComparingTo("150.76");
-        verify(paymentEventKafkaTemplate, times(1)).send(TOPIC, "123456", eventCaptor.getValue());
+        verify(paymentEventKafkaTemplate, times(1)).send(TOPIC, eventCaptor.getValue().getTransactionId(), eventCaptor.getValue());
     }
 
     @Test
@@ -147,13 +151,13 @@ class PaymentServiceTest {
         stubBothAccountsExist("123456", "654321");
         var neverCompletes = new CompletableFuture<SendResult<String, PaymentEvent>>();
 
-        when(paymentEventKafkaTemplate.send(eq(TOPIC), eq("123456"), eventCaptor.capture())).thenReturn(neverCompletes);
+        when(paymentEventKafkaTemplate.send(eq(TOPIC), keyCaptor.capture(), eventCaptor.capture())).thenReturn(neverCompletes);
 
         assertThatThrownBy(() -> serviceWithTimeout(Duration.ofMillis(50)).publishPayment(request))
                 .isInstanceOf(PaymentPublishException.class)
                 .hasCauseInstanceOf(java.util.concurrent.TimeoutException.class);
 
-        verify(paymentEventKafkaTemplate, times(1)).send(TOPIC, "123456", eventCaptor.getValue());
+        verify(paymentEventKafkaTemplate, times(1)).send(TOPIC, eventCaptor.getValue().getTransactionId(), eventCaptor.getValue());
         assertThat(publishCount(PublishOutcome.TIMEOUT)).isEqualTo(1);
         assertThat(publishCount(PublishOutcome.SUCCESS)).isZero();
         assertThat(acceptedCount(PaymentMethod.PIX)).isZero();
@@ -166,13 +170,13 @@ class PaymentServiceTest {
         stubBothAccountsExist("123456", "654321");
         var failed = CompletableFuture.<SendResult<String, PaymentEvent>>failedFuture(new KafkaException("broker rejected"));
 
-        when(paymentEventKafkaTemplate.send(eq(TOPIC), eq("123456"), eventCaptor.capture())).thenReturn(failed);
+        when(paymentEventKafkaTemplate.send(eq(TOPIC), keyCaptor.capture(), eventCaptor.capture())).thenReturn(failed);
 
         assertThatThrownBy(() -> serviceWithTimeout(Duration.ofSeconds(5)).publishPayment(request))
                 .isInstanceOf(PaymentPublishException.class)
                 .hasCauseInstanceOf(java.util.concurrent.ExecutionException.class);
 
-        verify(paymentEventKafkaTemplate, times(1)).send(TOPIC, "123456", eventCaptor.getValue());
+        verify(paymentEventKafkaTemplate, times(1)).send(TOPIC, eventCaptor.getValue().getTransactionId(), eventCaptor.getValue());
         assertThat(publishCount(PublishOutcome.ERROR)).isEqualTo(1);
         assertThat(acceptedCount(PaymentMethod.PIX)).isZero();
     }
@@ -184,13 +188,13 @@ class PaymentServiceTest {
         stubBothAccountsExist("123456", "654321");
         var serializationFailure = new KafkaException("could not serialize the event");
 
-        when(paymentEventKafkaTemplate.send(eq(TOPIC), eq("123456"), eventCaptor.capture())).thenThrow(serializationFailure);
+        when(paymentEventKafkaTemplate.send(eq(TOPIC), keyCaptor.capture(), eventCaptor.capture())).thenThrow(serializationFailure);
 
         assertThatThrownBy(() -> serviceWithTimeout(Duration.ofSeconds(5)).publishPayment(request))
                 .isInstanceOf(PaymentPublishException.class)
                 .hasCause(serializationFailure);
 
-        verify(paymentEventKafkaTemplate, times(1)).send(TOPIC, "123456", eventCaptor.getValue());
+        verify(paymentEventKafkaTemplate, times(1)).send(TOPIC, eventCaptor.getValue().getTransactionId(), eventCaptor.getValue());
         assertThat(publishCount(PublishOutcome.ERROR)).isEqualTo(1);
         assertThat(acceptedCount(PaymentMethod.PIX)).isZero();
     }

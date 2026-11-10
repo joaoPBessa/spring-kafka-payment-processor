@@ -50,7 +50,7 @@ public class PaymentService {
 
 		Timer.Sample sample = paymentMetrics.startPublish();
 		try {
-			paymentEventKafkaTemplate.send(topic, event.getSourceAccount(), event)
+			paymentEventKafkaTemplate.send(topic, event.getTransactionId(), event)
 					.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
 			paymentMetrics.stopPublish(sample, PublishOutcome.SUCCESS);
 		} catch (InterruptedException e) {
