@@ -59,7 +59,7 @@ mvn spring-boot:run
 ## Project Structure
 
 ```text
-com/joaoPBessa/payments/producer
+com/joaopbessa/payments/producer
 ├── PaymentProducerApiApplication.java
 ├── api/dto/
 │   ├── request/    # CreateAccountRequestDTO, UpdateAccountRequestDTO, PageableAccountFilterRequestDTO, PaymentRequestDTO
