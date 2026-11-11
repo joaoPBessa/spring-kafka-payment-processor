@@ -12,8 +12,6 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -29,7 +27,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.joaoPBessa.payments.consumer.config.DeadLetterReplayProperties;
 import com.joaoPBessa.payments.consumer.metrics.ReplayTrigger;
 
 @ExtendWith(MockitoExtension.class)
@@ -55,9 +52,7 @@ class DeadLetterReplayServiceTest {
 
     @BeforeEach
     void setUp() {
-        DeadLetterReplayProperties properties = new DeadLetterReplayProperties(
-                true, "0 0 3 * * *", ZoneId.of("UTC"), MAX_BATCH_SIZE, Duration.ofSeconds(5));
-        service = new DeadLetterReplayService(reader, replayer, truncator, properties);
+        service = new DeadLetterReplayService(reader, replayer, truncator, MAX_BATCH_SIZE);
     }
 
     private ConsumerRecord<String, byte[]> record(String key, int partition, long offset, long timestamp) {

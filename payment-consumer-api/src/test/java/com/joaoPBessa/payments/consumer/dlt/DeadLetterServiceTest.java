@@ -22,7 +22,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.joaoPBessa.payments.consumer.api.dto.response.DeadLetterMessageResponse;
 import com.joaopBessa.payments.common.avro.PaymentEvent;
 import com.joaopBessa.payments.common.avro.PaymentMethod;
 
@@ -80,25 +79,24 @@ class DeadLetterServiceTest {
         when(decoder.decode(first)).thenReturn(DeadLetterPayload.decoded(event("tx-1")));
         when(decoder.decode(second)).thenReturn(DeadLetterPayload.decoded(event("tx-2")));
 
-        List<DeadLetterMessageResponse> messages = service.oldestMessages();
+        List<DeadLetterMessage> messages = service.oldestMessages();
 
         assertThat(messages).hasSize(2);
-        DeadLetterMessageResponse firstMessage = messages.get(0);
+        DeadLetterMessage firstMessage = messages.get(0);
         assertThat(firstMessage.partition()).isZero();
         assertThat(firstMessage.offset()).isEqualTo(4);
         assertThat(firstMessage.key()).isEqualTo("key-4");
         assertThat(firstMessage.timestamp()).isEqualTo(Instant.ofEpochMilli(RECORD_TIME + 4));
-        assertThat(firstMessage.rawPayload()).isNull();
-        assertThat(firstMessage.payload().transactionId()).isEqualTo("tx-1");
-        assertThat(firstMessage.payload().eventTimestamp()).isEqualTo(EVENT_TIME);
-        assertThat(firstMessage.payload().sourceAccount()).isEqualTo("000000");
-        assertThat(firstMessage.payload().targetAccount()).isEqualTo("910002");
-        assertThat(firstMessage.payload().amount()).isEqualByComparingTo("12.50");
-        assertThat(firstMessage.payload().currency()).isEqualTo("USD");
-        assertThat(firstMessage.payload().paymentMethod())
-                .isEqualTo(com.joaopBessa.payments.common.domain.PaymentMethod.CREDIT_CARD);
+        assertThat(firstMessage.payload().rawPayload()).isNull();
+        assertThat(firstMessage.payload().event().getTransactionId()).isEqualTo("tx-1");
+        assertThat(firstMessage.payload().event().getEventTimestamp()).isEqualTo(EVENT_TIME);
+        assertThat(firstMessage.payload().event().getSourceAccount()).isEqualTo("000000");
+        assertThat(firstMessage.payload().event().getTargetAccount()).isEqualTo("910002");
+        assertThat(firstMessage.payload().event().getAmount()).isEqualByComparingTo("12.50");
+        assertThat(firstMessage.payload().event().getCurrency()).isEqualTo("USD");
+        assertThat(firstMessage.payload().event().getPaymentMethod()).isEqualTo(PaymentMethod.CREDIT_CARD);
         assertThat(messages.get(1).partition()).isEqualTo(1);
-        assertThat(messages.get(1).payload().transactionId()).isEqualTo("tx-2");
+        assertThat(messages.get(1).payload().event().getTransactionId()).isEqualTo("tx-2");
     }
 
     @Test
@@ -108,11 +106,11 @@ class DeadLetterServiceTest {
         when(reader.oldest()).thenReturn(List.of(record(0, 0, poisonPill)));
         when(decoder.decode(poisonPill)).thenReturn(DeadLetterPayload.undecodable("garbage"));
 
-        List<DeadLetterMessageResponse> messages = service.oldestMessages();
+        List<DeadLetterMessage> messages = service.oldestMessages();
 
         assertThat(messages).hasSize(1);
-        assertThat(messages.get(0).payload()).isNull();
-        assertThat(messages.get(0).rawPayload()).isEqualTo("garbage");
+        assertThat(messages.get(0).payload().event()).isNull();
+        assertThat(messages.get(0).payload().rawPayload()).isEqualTo("garbage");
     }
 
 }

@@ -7,6 +7,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.core.KafkaAdmin;
 import org.springframework.kafka.core.KafkaTemplate;
 
+import com.joaoPBessa.payments.consumer.dlt.DeadLetterReader;
+import com.joaoPBessa.payments.consumer.dlt.DeadLetterReplayService;
 import com.joaoPBessa.payments.consumer.dlt.DeadLetterReplayer;
 import com.joaoPBessa.payments.consumer.dlt.DeadLetterTruncator;
 import com.joaoPBessa.payments.consumer.metrics.PaymentConsumerMetrics;
@@ -21,6 +23,12 @@ public class DeadLetterReplayConfig {
 			PaymentConsumerMetrics metrics) {
 		return new DeadLetterReplayer(rawDltKafkaTemplate, kafkaProperties.topics().paymentEvents(),
 				properties.sendTimeout(), metrics);
+	}
+
+	@Bean
+	public DeadLetterReplayService deadLetterReplayService(DeadLetterReader reader, DeadLetterReplayer replayer,
+			DeadLetterTruncator truncator, DeadLetterReplayProperties properties) {
+		return new DeadLetterReplayService(reader, replayer, truncator, properties.maxBatchSize());
 	}
 
 	@Bean

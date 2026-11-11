@@ -13,16 +13,13 @@ import java.util.stream.Collectors;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
-import org.springframework.stereotype.Service;
 
-import com.joaoPBessa.payments.consumer.config.DeadLetterReplayProperties;
 import com.joaoPBessa.payments.consumer.metrics.ReplayTrigger;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-@Service
 @RequiredArgsConstructor
 public class DeadLetterReplayService {
 
@@ -34,7 +31,7 @@ public class DeadLetterReplayService {
 	private final DeadLetterReader reader;
 	private final DeadLetterReplayer replayer;
 	private final DeadLetterTruncator truncator;
-	private final DeadLetterReplayProperties properties;
+	private final int maxBatchSize;
 	private final AtomicBoolean running = new AtomicBoolean(false);
 
 	public ReplaySummary replayPending() {
@@ -62,7 +59,7 @@ public class DeadLetterReplayService {
 		Set<Integer> stoppedPartitions = new HashSet<>();
 		int replayed = 0;
 		int failed = 0;
-		for (ConsumerRecord<String, byte[]> deadLetter : reader.pending(properties.maxBatchSize())) {
+		for (ConsumerRecord<String, byte[]> deadLetter : reader.pending(maxBatchSize)) {
 			if (stoppedPartitions.contains(deadLetter.partition())) {
 				continue;
 			}
