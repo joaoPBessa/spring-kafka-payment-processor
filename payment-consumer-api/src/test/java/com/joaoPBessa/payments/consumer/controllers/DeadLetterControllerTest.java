@@ -28,13 +28,14 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.joaoPBessa.payments.consumer.api.dto.request.ReplayDeadLettersRequest;
-import com.joaoPBessa.payments.consumer.api.dto.response.DeadLetterMessageResponse;
-import com.joaoPBessa.payments.consumer.api.dto.response.PaymentEventResponse;
+import com.joaoPBessa.payments.consumer.dlt.DeadLetterMessage;
+import com.joaoPBessa.payments.consumer.dlt.DeadLetterPayload;
 import com.joaoPBessa.payments.consumer.dlt.DeadLetterReadException;
 import com.joaoPBessa.payments.consumer.dlt.DeadLetterReplayService;
 import com.joaoPBessa.payments.consumer.dlt.DeadLetterService;
 import com.joaoPBessa.payments.consumer.dlt.ReplayResult;
-import com.joaopBessa.payments.common.domain.PaymentMethod;
+import com.joaopBessa.payments.common.avro.PaymentEvent;
+import com.joaopBessa.payments.common.avro.PaymentMethod;
 
 @WebMvcTest(controllers = DeadLetterController.class, properties = {
         "spring.cloud.vault.enabled=false", "spring.cloud.bootstrap.enabled=false" })
@@ -55,14 +56,22 @@ class DeadLetterControllerTest {
     @MockitoBean
     private DeadLetterReplayService deadLetterReplayService;
 
-    private DeadLetterMessageResponse decodedMessage() {
-        PaymentEventResponse payload = new PaymentEventResponse("tx-1", EVENT_TIMESTAMP, "000000", "910002",
-                new BigDecimal("12.50"), "USD", PaymentMethod.CREDIT_CARD);
-        return new DeadLetterMessageResponse(0, 3, "tx-1", TIMESTAMP, payload, null);
+    private DeadLetterMessage decodedMessage() {
+        PaymentEvent event = PaymentEvent.newBuilder()
+                .setTransactionId("tx-1")
+                .setEventTimestamp(EVENT_TIMESTAMP)
+                .setSourceAccount("000000")
+                .setTargetAccount("910002")
+                .setAmount(new BigDecimal("12.50"))
+                .setCurrency("USD")
+                .setPaymentMethod(PaymentMethod.CREDIT_CARD)
+                .build();
+        return new DeadLetterMessage(0, 3, "tx-1", TIMESTAMP, DeadLetterPayload.decoded(event));
     }
 
-    private DeadLetterMessageResponse undecodableMessage() {
-        return new DeadLetterMessageResponse(1, 8, "poison", TIMESTAMP, null, "this is not an avro payload");
+    private DeadLetterMessage undecodableMessage() {
+        return new DeadLetterMessage(1, 8, "poison", TIMESTAMP,
+                DeadLetterPayload.undecodable("this is not an avro payload"));
     }
 
     @Test

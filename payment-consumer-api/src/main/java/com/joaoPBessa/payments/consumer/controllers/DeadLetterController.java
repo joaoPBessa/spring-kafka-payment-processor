@@ -32,7 +32,7 @@ public class DeadLetterController {
 	@GetMapping
 	public List<DeadLetterMessageResponse> oldestDeadLetters() {
 		log.info("Received request to list the oldest dead letters");
-		return deadLetterService.oldestMessages();
+		return deadLetterService.oldestMessages().stream().map(DeadLetterMessageResponse::from).toList();
 	}
 
 	@PostMapping("/replay")

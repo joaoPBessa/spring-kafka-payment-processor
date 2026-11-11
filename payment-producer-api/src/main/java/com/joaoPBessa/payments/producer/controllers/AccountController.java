@@ -36,7 +36,7 @@ public class AccountController {
 
 	@PostMapping("/")
 	public ResponseEntity<AccountResponseDTO> createAccount(@RequestBody @Valid CreateAccountRequestDTO request) {
-		log.info("Recieve account request, number: {}, name: {}",
+		log.info("Received request to create account, number: {}, name: {}",
 				request.accountNumber(), request.accountName());
 		
 		var savedAccount = service.save(request.toEntity());
@@ -55,14 +55,14 @@ public class AccountController {
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	@PatchMapping("/{accountNumber}")
 	public void updateAccount(@PathVariable String accountNumber, @Valid @RequestBody UpdateAccountRequestDTO request) {
-		log.info("Recieve update request to number: {}, name: {}", accountNumber, request.accountName());
+		log.info("Received request to rename account number: {}, name: {}", accountNumber, request.accountName());
 		service.updateAccountName(accountNumber, request.accountName());
 	}
 	
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	@DeleteMapping("/{accountNumber}")
 	public void deleteAccount(@PathVariable String accountNumber) {
-		log.info("Receive delete request to account number: {}", accountNumber);
+		log.info("Received request to delete account number: {}", accountNumber);
 		service.deleteAccount(accountNumber);
 	}
 	

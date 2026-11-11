@@ -28,12 +28,12 @@ bin/
 .DS_Store
 Thumbs.db
 
-# --- CONFIGURAÇÕES LOCAIS ---
-# Descomente se você tiver senhas ou chaves em arquivos locais
+# --- LOCAL SETTINGS ---
+# Uncomment if you keep passwords or keys in local files
 # application-local.yaml
 # .env
 
-# --- ARTEFATOS DE IA (locais, não fazem parte do código do projeto) ---
+# --- AI ARTIFACTS (local, not part of the project code) ---
 .claude/
 
 # --- AVRO GENERATED SOURCES ---
