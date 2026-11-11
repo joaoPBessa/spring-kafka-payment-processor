@@ -34,7 +34,6 @@ Thumbs.db
 # .env
 
 # --- ARTEFATOS DE IA (locais, não fazem parte do código do projeto) ---
-CLAUDE.md
 .claude/
 
 # --- AVRO GENERATED SOURCES ---

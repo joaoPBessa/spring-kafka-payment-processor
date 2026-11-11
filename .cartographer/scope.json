@@ -1,0 +1,10 @@
+{
+  "goal": "onboarding doc",
+  "approach": "manual map, no review subagents (the cartographer mapper only parses py/js/ts/go; this repo is Java)",
+  "skip_paths": ["**/target/", "**/*.png"],
+  "known_issues": [],
+  "ground_truth": "CLAUDE.md",
+  "test_posture": "intent signal only (tests are not reviewed)",
+  "budget_hint": "none (no subagents)",
+  "size": { "files": 153, "java_main_classes": 64, "java_test_classes": 44, "main_lines": 2376, "test_lines": 5436 }
+}
