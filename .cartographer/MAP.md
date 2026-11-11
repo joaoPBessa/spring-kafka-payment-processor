@@ -265,7 +265,7 @@ These come straight from the graphs above; they are observations, not a code rev
 1. **Package cycles in the consumer.** `dlt ↔ api.dto.response` (`DeadLetterMessageResponse.of` takes a `DeadLetterPayload`, while `DeadLetterService` returns response DTOs) and `config ↔ dlt` (`DeadLetterReplayService` reads `DeadLetterReplayProperties`, while `DeadLetterReplayConfig` builds `dlt` beans).
 2. **Persistence depends on the API layer in the producer.** `AccountSpecification` imports `PageableAccountFilterRequestDTO`; DTOs in turn import the `Account` entity (`toEntity`, `from`).
 3. **`ObservabilityConfig` is duplicated.** The producer and consumer copies are identical except for the `package` line; both only register `ActuatorObservationPredicate`, which already lives in `common-libraries`.
-4. **Base-package casing differs by module.** Apps use `com.joaoPBessa…`, `common-libraries` uses `com.joaopBessa…`.
+4. **Base-package casing was normalized.** Every module now uses lower-case `com.joaopbessa…` (the apps used `com.joaoPBessa…`, `common-libraries` and the groupId `com.joaopBessa…`), guarded by a `PackageNamingTest` in each module.
 5. **Size is concentrated in the consumer.** It holds 36 of the 64 main classes, 13 of them in `dlt`, and 3,832 of the 5,436 test lines (tests are about 2.8× the main code there, about 1.6× in the producer).
 6. **One schema ties the modules together.** The Avro `PaymentEvent` is used by 10 main classes across both apps; changing `PaymentEvent.avsc` affects the producer, the listener, the DLT view and the replay.
 
