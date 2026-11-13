@@ -38,3 +38,7 @@ jobs:
           SPRING_CLOUD_VAULT_ENABLED: 'false'
           SPRING_CLOUD_BOOTSTRAP_ENABLED: 'false'
         run: mvn --no-transfer-progress -B clean verify -Dsurefire.redirectTestOutputToFile=false
+
+      - name: Publish the test totals
+        if: always()
+        run: bash scripts/test-summary.sh >> "$GITHUB_STEP_SUMMARY"
