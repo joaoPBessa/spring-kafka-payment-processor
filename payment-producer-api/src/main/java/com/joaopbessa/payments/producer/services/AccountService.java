@@ -17,6 +17,7 @@ import com.joaopbessa.payments.producer.domain.entities.Account;
 import com.joaopbessa.payments.producer.exceptions.AccountNotFoundException;
 import com.joaopbessa.payments.producer.exceptions.DuplicatedAccountException;
 import com.joaopbessa.payments.producer.repositories.AccountRepository;
+import com.joaopbessa.payments.producer.repositories.specifications.AccountFilter;
 import com.joaopbessa.payments.producer.repositories.specifications.AccountSpecification;
 
 import lombok.RequiredArgsConstructor;
@@ -65,12 +66,16 @@ public class AccountService {
 		Pageable pageable = PageRequest.of(filter.page(), filter.size());
 		
 		Page<Account> result = repository.findAll(
-				AccountSpecification.filterBy(filter),
+				AccountSpecification.filterBy(toAccountFilter(filter)),
 				pageable);
 		
 		return new PageImpl<>(result.getContent().stream().map(AccountResponseDTO::fromEntity).toList(), pageable, result.getTotalElements());
 	}
 	
+	private AccountFilter toAccountFilter(PageableAccountFilterRequestDTO filter) {
+		return new AccountFilter(filter.accountNumber(), filter.accountName(), filter.active());
+	}
+
 	private Account findAccoutByNumberAndActive(String accountNumber, boolean active) {
 		
 		return repository.findByNumberAndActive(accountNumber, active)
