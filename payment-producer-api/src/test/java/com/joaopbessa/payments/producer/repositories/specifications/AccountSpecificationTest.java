@@ -12,7 +12,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
 
-import com.joaopbessa.payments.producer.api.dto.request.PageableAccountFilterRequestDTO;
 import com.joaopbessa.payments.producer.config.JPAConfiguration;
 import com.joaopbessa.payments.producer.domain.entities.Account;
 import com.joaopbessa.payments.producer.repositories.AccountRepository;
@@ -21,9 +20,6 @@ import com.joaopbessa.payments.producer.repositories.AccountRepository;
 @Import(JPAConfiguration.class)
 @DisplayName("AccountSpecification")
 class AccountSpecificationTest {
-
-    private static final int FIRST_PAGE = 0;
-    private static final int PAGE_SIZE = 10;
 
     private static final String JOAO = "123456";
     private static final String MARIA = "654321";
@@ -51,7 +47,7 @@ class AccountSpecificationTest {
     }
 
     private List<String> numbersMatching(String accountNumber, String accountName, Boolean active) {
-        var filter = new PageableAccountFilterRequestDTO(accountNumber, accountName, active, FIRST_PAGE, PAGE_SIZE);
+        var filter = new AccountFilter(accountNumber, accountName, active);
         return repository.findAll(AccountSpecification.filterBy(filter)).stream()
                 .map(Account::getNumber)
                 .sorted()
