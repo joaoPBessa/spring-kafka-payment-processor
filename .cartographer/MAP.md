@@ -1,6 +1,6 @@
 # Codebase map — spring-kafka-payment-processor
 
-Static map of the repository as of branch `feat/dlt-replay` (stacked on `feat/dlt-viewer` and `feat/per-app-db-credentials`). Built by reading Java `package`/`import` declarations and the Maven, Compose and migration files; no code was run. The generated Avro classes (`common.avro.*`) are not in the source tree and are therefore left out of the package graphs (their usage is listed in §6).
+Static map of the repository, drawn on branch `feat/dlt-replay` and refreshed after the architecture clean-up (no package cycles, no repository-to-DTO dependency); class and line totals are those of the original drawing. Built by reading Java `package`/`import` declarations and the Maven, Compose and migration files; no code was run. The generated Avro classes (`common.avro.*`) are not in the source tree and are therefore left out of the package graphs (their usage is listed in §6).
 
 ## 1. At a glance
 
@@ -99,7 +99,7 @@ flowchart TD
   repositories["repositories<br/>AccountRepository"]
   specs["repositories.specifications<br/>AccountSpecification"]
   entities["domain.entities<br/>Account"]
-  config["config<br/>KafkaProducerConfig, RedisCacheConfig,<br/>KafkaProducerProperties, JPAConfiguration,<br/>ObservabilityConfig"]
+  config["config<br/>KafkaProducerConfig, RedisCacheConfig,<br/>KafkaProducerProperties, JPAConfiguration"]
   metrics["metrics<br/>PaymentMetrics, PublishOutcome"]
   common["common-libraries"]
 
@@ -116,7 +116,6 @@ flowchart TD
   services --> config
   repositories --> entities
   specs --> entities
-  specs --> dtoreq
   exceptions --> dtores
   dtoreq --> entities
   dtores --> entities
@@ -137,7 +136,7 @@ flowchart TD
   controllers["controllers<br/>DeadLetterController,<br/>DeadLetterExceptionHandler"]
   dto["api.dto.request / response"]
   dlt["dlt<br/>reader, decoder, replayer,<br/>truncator, services, scheduler"]
-  config["config<br/>KafkaConsumerErrorHandlingConfig,<br/>DeadLetterViewConfig, DeadLetterReplayConfig,<br/>*Properties, ObservabilityConfig"]
+  config["config<br/>KafkaConsumerErrorHandlingConfig,<br/>DeadLetterViewConfig, DeadLetterReplayConfig,<br/>*Properties"]
   metrics["metrics<br/>PaymentConsumerMetrics,<br/>RetryMetricsListener"]
   common["common-libraries"]
 
@@ -150,9 +149,7 @@ flowchart TD
   repositories --> entities
   controllers --> dlt
   controllers --> dto
-  dlt --> dto
   dlt --> metrics
-  dlt --> config
   dto --> dlt
   config --> dlt
   config --> metrics
@@ -162,7 +159,7 @@ flowchart TD
   entities --> common
 ```
 
-`dto → dlt` and `config → dlt` close two package cycles (see §7).
+`dto → dlt` and `config → dlt` point one way only: `dlt` imports neither (enforced by the consumer's `ArchitectureTest`).
 
 ## 5. Main flows
 
@@ -234,7 +231,7 @@ flowchart TD
 | `api.dto.request` | `CreateAccountRequestDTO`, `UpdateAccountRequestDTO`, `PageableAccountFilterRequestDTO`, `PaymentRequestDTO` |
 | `api.dto.response` | `AccountResponseDTO`, `PaymentResponseDTO`, `ErrorResponse` |
 | `exceptions` | `GlobalExceptionHandler`, `AccountNotFoundException`, `DuplicatedAccountException`, `PaymentPublishException` |
-| `config` | `KafkaProducerConfig`, `KafkaProducerProperties`, `RedisCacheConfig`, `JPAConfiguration`, `ObservabilityConfig` |
+| `config` | `KafkaProducerConfig`, `KafkaProducerProperties`, `RedisCacheConfig`, `JPAConfiguration` |
 | `metrics` | `PaymentMetrics`, `PublishOutcome` |
 
 ### payment-consumer-api
@@ -242,7 +239,7 @@ flowchart TD
 |---|---|
 | `listeners` / `services` / `mappers` | `PaymentEventListener` → `PaymentPersistenceService` → `PaymentEventMapper` |
 | `repositories` / `domain.entities` | `PaymentRepository`, `Payment` |
-| `config` | `KafkaConsumerErrorHandlingConfig` (error handler, DLT producers, topic), `KafkaConsumerProperties`, `DeadLetterViewConfig`, `DeadLetterReplayConfig`, `DeadLetterReplayProperties`, `ObservabilityConfig` |
+| `config` | `KafkaConsumerErrorHandlingConfig` (error handler, DLT producers, topic), `KafkaConsumerProperties`, `DeadLetterViewConfig`, `DeadLetterReplayConfig`, `DeadLetterReplayProperties` |
 | `dlt` (13 classes) | View: `DeadLetterReader`, `DeadLetterPayloadDecoder`, `DeadLetterPayload`, `DeadLetterService`. Replay: `DeadLetterReplayer`, `DeadLetterTruncator`, `DeadLetterReplayService`, `DeadLetterReplayScheduler`, `ReplayResult`, `ReplayOutcome`, `ReplaySummary`. Errors: `DeadLetterReadException`, `DeadLetterReplayException` |
 | `controllers` | `DeadLetterController` (GET list, POST replay), `DeadLetterExceptionHandler` (503 problem detail) |
 | `api.dto` | `ReplayDeadLettersRequest`; `DeadLetterMessageResponse`, `PaymentEventResponse`, `DeadLetterReplayResponse`, `DeadLetterReplayResultResponse` |
@@ -262,9 +259,9 @@ flowchart TD
 
 These come straight from the graphs above; they are observations, not a code review.
 
-1. **Package cycles in the consumer.** `dlt ↔ api.dto.response` (`DeadLetterMessageResponse.of` takes a `DeadLetterPayload`, while `DeadLetterService` returns response DTOs) and `config ↔ dlt` (`DeadLetterReplayService` reads `DeadLetterReplayProperties`, while `DeadLetterReplayConfig` builds `dlt` beans).
-2. **Persistence depends on the API layer in the producer.** `AccountSpecification` imports `PageableAccountFilterRequestDTO`; DTOs in turn import the `Account` entity (`toEntity`, `from`).
-3. **`ObservabilityConfig` is duplicated.** The producer and consumer copies are identical except for the `package` line; both only register `ActuatorObservationPredicate`, which already lives in `common-libraries`.
+1. **Package cycles in the consumer (resolved).** `dlt ↔ api.dto.response` and `config ↔ dlt` were removed: `DeadLetterService` returns a domain `DeadLetterMessage`, and `DeadLetterReplayService` receives the batch size instead of the properties. Both apps now have an `ArchitectureTest` (ArchUnit) that forbids cycles.
+2. **Persistence depended on the API layer in the producer (resolved).** `AccountSpecification` now takes an `AccountFilter` from its own package and `AccountService` maps the request DTO to it. The DTOs still import the `Account` entity (`toEntity`, `fromEntity`), which is the API depending on the domain and is allowed.
+3. **The duplicated `ObservabilityConfig` is gone (resolved).** `ActuatorObservationAutoConfiguration` in `common-libraries` now registers the predicate for both apps.
 4. **Base-package casing was normalized.** Every module now uses lower-case `com.joaopbessa…` (the apps used `com.joaoPBessa…`, `common-libraries` and the groupId `com.joaopBessa…`), guarded by a `PackageNamingTest` in each module.
 5. **Size is concentrated in the consumer.** It holds 36 of the 64 main classes, 13 of them in `dlt`, and 3,832 of the 5,436 test lines (tests are about 2.8× the main code there, about 1.6× in the producer).
 6. **One schema ties the modules together.** The Avro `PaymentEvent` is used by 10 main classes across both apps; changing `PaymentEvent.avsc` affects the producer, the listener, the DLT view and the replay.
