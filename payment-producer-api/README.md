@@ -109,9 +109,9 @@ The Kafka template is observed, so the trace context travels to the consumer in 
 
 ## Testing
 
-- **Slice tests** (`@WebMvcTest`) for both controllers: `AccountControllerTest` (15 tests), `PaymentControllerTest` (14 tests).
-- **Unit tests**: `AccountServiceTest` (9 tests), `PaymentServiceTest` (7 tests) — plain Mockito, no Spring context.
-- **Integration tests**: `PaymentProducerApiApplicationTests` boots the full context against Testcontainers-managed Kafka, Redis, Zipkin and Apicurio containers (the registry URL reaches the context through a `DynamicPropertyRegistrar`, so the dynamic port is wired automatically); `PaymentPublishingIntegrationTest` (6 tests) publishes over real HTTP and confirms the exact Avro event round-trips through a real Kafka broker and Apicurio Registry.
+- **Slice tests** (`@WebMvcTest`) for both controllers: `AccountControllerTest`, `PaymentControllerTest`.
+- **Unit tests**: `AccountServiceTest`, `PaymentServiceTest` — plain Mockito, no Spring context.
+- **Integration tests**: `PaymentProducerApiApplicationTests` boots the full context against Testcontainers-managed Kafka, Redis, Zipkin and Apicurio containers (the registry URL reaches the context through a `DynamicPropertyRegistrar`, so the dynamic port is wired automatically); `PaymentPublishingIntegrationTest` publishes over real HTTP and confirms the exact Avro event round-trips through a real Kafka broker and Apicurio Registry.
 
 ```bash
 mvn test      # unit + slice tests

@@ -38,7 +38,7 @@ A multi-module payment-processing backend, built to explore account management a
 - **Kafka payment publishing** — `POST /api/v1/payments` validates both accounts exist (via the same Redis cache as account lookups), publishes an Avro-encoded event to Kafka, validated against an Apicurio Registry schema, and only returns `202 Accepted` once the broker confirms the write.
 - **Payment consumer** — `payment-consumer-api` reads the Avro events, stores them in the `PAYMENT` table (unique transaction id, foreign keys to both accounts, positive-amount check) and skips duplicates. Failures are retried with exponential backoff and then published to `payment.events.DLT`; errors that can never succeed (unknown account, invalid amount, undeserializable payload) skip the retries.
 - **Observability** — metrics, dashboards, traces and JSON logs for both services (see [Observability](#observability)).
-- Testcontainers-backed integration tests alongside `@WebMvcTest`/unit tests (279 tests total, see [Testing](#testing)).
+- Testcontainers-backed integration tests alongside `@WebMvcTest`/unit tests (see [Testing](#testing)).
 
 ### Roadmap / In progress
 - A Kafka monitoring UI and alerting on top of the metrics.
@@ -132,10 +132,10 @@ mvn test      # unit + slice tests
 mvn verify    # also runs the Testcontainers-backed integration test (requires Docker running)
 ```
 
-Current coverage — 279 tests in total:
-- `common-libraries` (24): `PaymentMethod` mapping to and from Avro, the observation predicate that keeps actuator calls out of metrics and traces, the auto-configuration that registers it in both applications, and a guard that keeps every package name in lower case.
-- `payment-producer-api` (69): 15 on `AccountController`, 14 on `PaymentController`, 9 on `AccountService`, 7 on `PaymentService`, 10 on the payment metrics, 3 on the `json-logs` profile, 1 proving a send fails within seconds when the broker is down, 1 on the per-app Vault secret, 2 guarding the lower-case package names, a full-context startup test, and a 6-test integration suite on real Kafka and Apicurio (round trip with the `traceparent` header, Prometheus scrape, health, cache hit counting, actuator exclusion).
-- `payment-consumer-api` (186): 48 on a real Postgres (migration constraints, repository mapping and the privilege matrix of the application roles), 27 unit tests (mapper, idempotent persistence service, metrics, retry listener, listener), 24 on configuration (properties validation, error handler, `json-logs`, Flyway and Vault bootstrap), 2 guarding the lower-case package names, 64 on the dead letter view and replay (reader, decoder, services, controller, replayer, truncator, scheduler), and 21 integration tests on real Kafka, Apicurio and Postgres (13 on the pipeline, 3 on the dead letter view and 5 on the replay).
+What the suites cover (the CI job summary lists the real totals of every run, so no counts are written here):
+- `common-libraries`: `PaymentMethod` mapping to and from Avro, the observation predicate that keeps actuator calls out of metrics and traces, the auto-configuration that registers it in both applications, and a guard that keeps every package name in lower case.
+- `payment-producer-api`: `@WebMvcTest` slices for both controllers, unit tests for the account and payment services and the payment metrics, the `json-logs` profile, the per-app Vault secret, a send that must fail within seconds when the broker is down, the package-name guard, a full-context startup test, and an integration suite on real Kafka and Apicurio (round trip with the `traceparent` header, Prometheus scrape, health, cache hit counting, actuator exclusion).
+- `payment-consumer-api`: a real Postgres for the migration constraints, the repository mapping and the privilege matrix of the application roles; unit tests for the mapper, the idempotent persistence service, the metrics, the retry listener and the listener; configuration tests (properties validation, error handler, `json-logs`, Flyway and Vault bootstrap); the dead letter view and replay (reader, decoder, services, controller, replayer, truncator, scheduler); and integration suites on real Kafka, Apicurio and Postgres for the pipeline, the dead letter view and the replay.
 
 ## CI
 

@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Guidance for Claude Code when working in this repository. This reflects the **actual state of the code**. The READMEs were brought in line with it, but hand-maintained details such as test counts go stale after changes (see §8.2).
+Guidance for Claude Code when working in this repository. This reflects the **actual state of the code**; the READMEs were brought in line with it.
 
 Before implementing anything, load the `plan-activity` skill (`.claude/skills/plan-activity/SKILL.md`) — it defines the TDD workflow and quality bar (readability, no duplication, ≤4 params per method, green build) that all work in this repo must follow.
 
@@ -23,7 +23,7 @@ Dependency direction: both apps depend on `common-libraries`; `payment-db-migrat
 
 ## 3. Tech stack (as pinned in POMs, not as advertised in the README)
 
-- **Java 21**, Spring Boot **4.0.0** (parent `pom.xml` — note this is ahead of the README, which still claims Java 17 / Spring Boot 3.x)
+- **Java 21**, Spring Boot **4.0.0** (parent `pom.xml`)
 - Spring Cloud **2025.1.1** (root `pom.xml`, imported as a BOM for both apps)
 - Persistence: Spring Data JPA + PostgreSQL 15, Flyway migrations, dedicated `payment` schema
 - Cache: Spring Data Redis + `spring-boot-starter-cache`, manual `RedisCacheManager` bean (JSON value serialization, 10-minute TTL, null-caching disabled)
@@ -32,7 +32,7 @@ Dependency direction: both apps depend on `common-libraries`; `payment-db-migrat
 - Observability: Actuator + `micrometer-registry-prometheus` in both apps (`/actuator/prometheus`, tag `application`), tracing via Brave exported to Zipkin with the Kafka hop propagated through Spring Kafka observation (`traceparent`), `json-logs` profile for ECS structured logs. The `/actuator*` exclusion comes from the shared `ActuatorObservationPredicate` (see §2). `docker-compose.yml` runs Prometheus, Grafana (dashboards in `monitoring/grafana/dashboards`), Zipkin and a Kafka exporter. In `@SpringBootTest` Brave only creates its propagation factory while trace export is enabled, so tests that need propagation use `@AutoConfigureTracing` and turn off only `management.tracing.export.zipkin`.
 - Validation: Jakarta Bean Validation (`spring-boot-starter-validation`)
 - Lombok for entity/boilerplate reduction (`@Data`, `@Builder`, `@RequiredArgsConstructor`, `@Slf4j`)
-- Tests: JUnit **6** (via `junit-jupiter` 6.0.0), Mockito, AssertJ, `spring-boot-testcontainers`, `testcontainers-kafka`, H2 (in-memory, for lighter contexts), `@WebMvcTest` slice tests
+- Tests: JUnit **6** (via `junit-jupiter` 6.0.1, managed by the Spring Boot BOM), Mockito, AssertJ, `spring-boot-testcontainers`, `testcontainers-kafka`, H2 (in-memory, for lighter contexts), `@WebMvcTest` slice tests
 - Jackson: global `SNAKE_CASE` property naming strategy (`application.yaml`) — all JSON request/response fields are snake_case even though Java fields are camelCase
 
 ## 4. Runtime configuration
@@ -104,6 +104,7 @@ mvn test
 CI (`.github/workflows/maven.yml`): GitHub Actions on push to `main`/`develop` and on PRs, `ubuntu-latest`, Java 21 (Temurin), 15-minute timeout, `TZ=UTC`, runs `mvn -B clean verify` with `SPRING_CLOUD_VAULT_ENABLED=false` and `SPRING_CLOUD_BOOTSTRAP_ENABLED=false` (Vault is not available there). Docker is preinstalled on the runner, so Testcontainers works without extra setup. To reproduce CI locally, stop `docker compose` first (a running local Kafka/Redis can mask Testcontainers wiring bugs) and export the same env vars.
 
 ### Test conventions in place
+- Do not write test counts in the READMEs or here: they go stale. The CI job summary (`scripts/test-summary.sh`, which reads the surefire reports) publishes the real totals of every run; run it locally after `mvn verify` to see them.
 - `@WebMvcTest` slices for controllers, mocking the service layer with `@MockitoBean`, asserting on `MockMvc` + `jsonPath`
 - Producer `TestcontainersConfiguration` provisions Kafka (`apache/kafka:4.1.1`) and Redis via `@ServiceConnection`, plus a `GenericContainer` for Apicurio Registry whose URL is exposed through a `DynamicPropertyRegistrar` bean (no Boot `ConnectionDetails` factory exists for Apicurio). The consumer has its own `PostgresContainerConfiguration` and `KafkaInfrastructureConfiguration` with the same pattern.
 - Integration tests must read broker addresses from `KafkaConnectionDetails`, never from `spring.kafka.bootstrap-servers` (the Testcontainers broker is not a property).
@@ -113,10 +114,9 @@ CI (`.github/workflows/maven.yml`): GitHub Actions on push to `main`/`develop` a
 ## 8. Known issues / technical debt (flagged for a senior-level review)
 
 1. **Secrets committed to git and already pushed to the public GitHub remote** (`origin` = `github.com/joaoPBessa/spring-kafka-payment-processor`): `docker-compose.yml` has a plaintext Postgres password, `scripts/init-db.sql` has plaintext passwords for three DB users (admin, producer, consumer), `scripts/init-vault.sh` has the Vault dev root token and re-embeds the same DB passwords. Known and deliberately deferred for now (docker-local-only values) — do not "fix" this unless asked.
-2. **README test counts are hand-maintained and go stale** (root `README.md` Testing section and the per-module READMEs). Update them after adding or removing tests. The rest of the README/code drift reported earlier (Java and Spring Boot versions, MapStruct, service/impl, PATCH route, Cucumber, Prometheus/Grafana) is resolved. For a portfolio piece an inaccurate README is worse than none — it is the first thing a reviewer reads.
-3. **Project's namesake feature (Kafka) is now implemented** — `PaymentController` publishes Avro-encoded events through a real broker and Schema Registry (§5). Remaining gaps in this area: no topic-creation/partition-count tuning beyond the broker's `auto.create.topics.enable` default, no Confluent Control Center-equivalent monitoring UI. The Apicurio dynamic port is now wired through a `DynamicPropertyRegistrar` in the test configuration.
-4. **Producer persistence depends on the API layer**: `AccountSpecification` imports `PageableAccountFilterRequestDTO`, and the request/response DTOs import the `Account` entity (`toEntity`, `from`). Not a cycle, but the repository layer should not know a request DTO.
-5. **Nothing enforces the dependency rules** (no ArchUnit or similar): only the package casing is guarded by a test; the absence of package cycles was verified by reading the imports, so it can regress silently.
+2. **Project's namesake feature (Kafka) is now implemented** — `PaymentController` publishes Avro-encoded events through a real broker and Schema Registry (§5). Remaining gaps in this area: no topic-creation/partition-count tuning beyond the broker's `auto.create.topics.enable` default, no Confluent Control Center-equivalent monitoring UI. The Apicurio dynamic port is now wired through a `DynamicPropertyRegistrar` in the test configuration.
+3. **Producer persistence depends on the API layer**: `AccountSpecification` imports `PageableAccountFilterRequestDTO`, and the request/response DTOs import the `Account` entity (`toEntity`, `from`). Not a cycle, but the repository layer should not know a request DTO.
+4. **Nothing enforces the dependency rules** (no ArchUnit or similar): only the package casing is guarded by a test; the absence of package cycles was verified by reading the imports, so it can regress silently.
 
 ## 9. Roadmap snapshot (`RoadmapProducerAPI.md`)
 
