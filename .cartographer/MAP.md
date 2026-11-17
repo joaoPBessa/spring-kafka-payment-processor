@@ -6,12 +6,13 @@ Static map of the repository, drawn on branch `feat/dlt-replay` and refreshed af
 
 | Module | Kind | Main classes (lines) | Test classes (lines) | Responsibility |
 |---|---|---|---|---|
-| `common-libraries` | jar | 2 (69) | 3 (126) | `PaymentMethod` enum, `PaymentEvent.avsc` (Avro schema → generated `PaymentEvent`), `ActuatorObservationPredicate`, shared test helper `PrometheusText` (test-jar) |
-| `payment-db-migration` | jar (SQL only) | – | – | Flyway migrations V1–V4; applied by the `db-migrate` compose service, test dependency of the consumer |
-| `payment-producer-api` | Spring Boot, :8081 | 26 (924) | 12 (1,478) | Account REST API (JPA + Redis cache) and the payment endpoint that publishes Avro events to Kafka |
-| `payment-consumer-api` | Spring Boot, :8082 | 36 (1,383) | 29 (3,832) | Consumes `payment.events`, persists payments, dead-letters failures, exposes the DLT view and replay |
+| `common-libraries` | jar | 9 (296) | 11 (765) | `PaymentMethod` enum, `PaymentEvent.avsc` (Avro schema → generated `PaymentEvent`), `ActuatorObservationPredicate`, the shared security building blocks (`Base64PasswordEncoder`, `PasswordEncoderAutoConfiguration`, `ResourceServerSecurityAutoConfiguration`, `TokenClaims`, `CommonRoles`, `OpenEndpoints`), test helpers `PrometheusText` and `TestJwtIssuer` (test-jar) |
+| `payment-db-migration` | jar (SQL only) | – | – | Flyway migrations V1–V6 (accounts, payments, application users and their seed); applied by the `db-migrate` compose service, test dependency of the consumer and the auth server |
+| `payment-producer-api` | Spring Boot, :8081 | 26 (889) | 15 (1,707) | Account REST API (JPA + Redis cache) and the payment endpoint that publishes Avro events to Kafka |
+| `payment-consumer-api` | Spring Boot, :8082 | 36 (1,344) | 32 (4,184) | Consumes `payment.events`, persists payments, dead-letters failures, exposes the DLT view and replay |
+| `payment-auth-server` | Spring Boot, :9000 | 7 (333) | 11 (1,124) | OAuth2 authorization server: users from the database, authorization code + PKCE for people, client credentials for services, JWT with a `roles` claim |
 
-Totals: 153 tracked files, 64 main + 44 test Java classes (2,376 / 5,436 lines). Infrastructure lives in `docker-compose.yml`, `scripts/` (Postgres roles, Vault seed) and `monitoring/` (Prometheus, Grafana dashboards).
+Totals: 205 tracked files, 78 main + 69 test Java classes (2,862 / 7,780 lines). Infrastructure lives in `docker-compose.yml`, `scripts/` (Postgres roles, Vault seed) and `monitoring/` (Prometheus, Grafana dashboards).
 
 ## 2. Runtime architecture
 
@@ -22,6 +23,7 @@ flowchart LR
   subgraph apps["Spring Boot apps (host JVMs)"]
     producer["payment-producer-api<br/>:8081"]
     consumer["payment-consumer-api<br/>:8082"]
+    authserver["payment-auth-server<br/>:9000"]
   end
 
   subgraph infra["docker compose"]
@@ -52,7 +54,10 @@ flowchart LR
   consumer -->|"decode Avro"| apicurio
   consumer -->|"secret/payment-consumer-api"| vault
 
-  migrate -->|"V1–V4 as payment-admin"| pg
+  authserver -->|"JPA as payment-auth-app<br/>(APP_USER tables, read-only)"| pg
+  authserver -->|"secret/payment-auth-server"| vault
+
+  migrate -->|"V1–V6 as payment-admin"| pg
   kexp --> kafka
   prom -.->|"scrape /actuator/prometheus"| producer
   prom -.-> consumer
@@ -245,14 +250,24 @@ flowchart TD
 | `api.dto` | `ReplayDeadLettersRequest`; `DeadLetterMessageResponse`, `PaymentEventResponse`, `DeadLetterReplayResponse`, `DeadLetterReplayResultResponse` |
 | `metrics` | `PaymentConsumerMetrics`, `RetryMetricsListener`, `DeadLetterKind`, `ReplayTrigger` |
 
+### payment-auth-server
+| Package | Classes |
+|---|---|
+| `domain.entities` / `repositories` | `AppUser` (roles as an element collection of `APP_USER_ROLE`), `AppUserRepository.findByUsername` |
+| `security` | `DatabaseUserDetailsService` (stored `{base64}` password handed to the `PasswordEncoder`, roles as `ROLE_*`, disabled users kept disabled) |
+| `tokens` | `RolesClaimCustomizer` (the `roles` claim: user roles for people, client roles for client credentials) |
+| `config` | `AuthorizationServerConfig` (authorization server and login chains, in-memory clients), `AuthServerProperties` (validated, secrets hidden from `toString`) |
+
 ### Data and infrastructure
 | Artifact | What it defines |
 |---|---|
 | `V1`, `V2` | `ACCOUNT` (unique `number`, soft-delete `active` column); producer role gets CRUD on it |
 | `V3` | `PAYMENT`: unique `transaction_id`, FKs from source and target account to `ACCOUNT(number)`, `amount > 0` |
 | `V4` | consumer role gets `SELECT, INSERT` on `PAYMENT` |
+| `V5`, `V6` | `APP_USER` (unique username, `{base64}` password) and `APP_USER_ROLE`; only the `payment-auth-app` role reads them. `V6` seeds four demonstration users |
 | `scripts/init-db.sql` | roles `payment-admin`, `payment-producer-app`, `payment-consumer-app`, `payment-auth-app` and the `payment` schema |
-| `scripts/init-vault.sh` | one secret per app, `secret/payment-producer-api` and `secret/payment-consumer-api`, plus `secret/payment-auth-server` (database role and OAuth2 client secrets) for the authorization server coming next |
+| `scripts/init-vault.sh` | one secret per app, `secret/payment-producer-api` and `secret/payment-consumer-api`, plus `secret/payment-auth-server` (database role and OAuth2 client secrets) read by the authorization server |
+| `scripts/get-token.sh` | authorization code + PKCE against the auth server without a browser; prints an access token |
 | `monitoring/` | Prometheus scrape config, 3 Grafana dashboards, traffic generator and screenshot scripts |
 
 ## 7. Structural notes
