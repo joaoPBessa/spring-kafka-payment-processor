@@ -1,1 +1,3 @@
 com.joaopbessa.payments.common.observability.ActuatorObservationAutoConfiguration
+com.joaopbessa.payments.common.security.PasswordEncoderAutoConfiguration
+com.joaopbessa.payments.common.security.ResourceServerSecurityAutoConfiguration
