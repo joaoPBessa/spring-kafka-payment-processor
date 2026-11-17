@@ -12,11 +12,14 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -40,9 +43,19 @@ class DatabasePrivilegesTest {
     private static final String CONSUMER_PASSWORD = "Zx7mP4rQd9LkV2nT";
     private static final String PRODUCER_ROLE = "payment-producer-app";
     private static final String PRODUCER_PASSWORD = "K1SJdZqbkJyW^qM)";
+    private static final String AUTH_ROLE = "payment-auth-app";
+    private static final String AUTH_PASSWORD = "Hq5vN8cWm3TbJ6sE";
 
     private static final String PAYMENT_TABLE = "payment.payment";
     private static final String ACCOUNT_TABLE = "payment.account";
+    private static final String APP_USER_TABLE = "payment.app_user";
+    private static final String APP_USER_ROLE_TABLE = "payment.app_user_role";
+    private static final List<String> USER_TABLES = List.of(APP_USER_TABLE, APP_USER_ROLE_TABLE);
+    private static final List<String> BUSINESS_TABLES = List.of(PAYMENT_TABLE, ACCOUNT_TABLE);
+    private static final List<String> ALL_PRIVILEGES = List.of("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE",
+            "REFERENCES", "TRIGGER");
+    private static final List<String> WRITE_PRIVILEGES = List.of("INSERT", "UPDATE", "DELETE", "TRUNCATE",
+            "REFERENCES", "TRIGGER");
     private static final String HAS_TABLE_PRIVILEGE = "SELECT has_table_privilege(?, ?, ?)";
     private static final String HAS_SCHEMA_PRIVILEGE = "SELECT has_schema_privilege(?, 'payment', ?)";
     private static final String ROLE_FLAGS = """
@@ -60,6 +73,9 @@ class DatabasePrivilegesTest {
             """;
     private static final String SELECT_ACCOUNTS = "SELECT count(*) FROM account";
     private static final String SELECT_PAYMENTS = "SELECT count(*) FROM payment";
+    private static final String SELECT_USERS = "SELECT count(*) FROM app_user";
+    private static final String INSERT_USER =
+            "INSERT INTO app_user (id, username, password) VALUES (gen_random_uuid(), ?, ?)";
     private static final String UPDATE_ACCOUNT = "UPDATE account SET name = ? WHERE number = ?";
     private static final String DELETE_ACCOUNT = "DELETE FROM account WHERE number = ?";
     private static final String DELETE_PAYMENTS = "DELETE FROM payment WHERE transaction_id = ?";
@@ -161,7 +177,7 @@ class DatabasePrivilegesTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = { CONSUMER_ROLE, PRODUCER_ROLE })
+    @ValueSource(strings = { CONSUMER_ROLE, PRODUCER_ROLE, AUTH_ROLE })
     @DisplayName("Should use the schema but never create objects in it")
     void shouldUseTheSchemaButNeverCreateObjectsInIt(String role) {
         assertThat(hasSchemaPrivilege(role, "USAGE")).isTrue();
@@ -169,7 +185,7 @@ class DatabasePrivilegesTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = { CONSUMER_ROLE, PRODUCER_ROLE })
+    @ValueSource(strings = { CONSUMER_ROLE, PRODUCER_ROLE, AUTH_ROLE })
     @DisplayName("Should be plain login roles without elevated attributes")
     void shouldBePlainLoginRolesWithoutElevatedAttributes(String role) {
         List<Boolean> flags = jdbcTemplate.query(ROLE_FLAGS, (resultSet, row) -> resultSet.getBoolean(1), role);
@@ -263,6 +279,102 @@ class DatabasePrivilegesTest {
     void shouldRefuseConsumerADeleteOfPayments() throws SQLException {
         try (Connection consumer = loginAs(CONSUMER_ROLE, CONSUMER_PASSWORD)) {
             assertThatThrownBy(() -> execute(consumer, DELETE_PAYMENTS, "none"))
+                    .isInstanceOfSatisfying(SQLException.class,
+                            failure -> assertThat(failure.getSQLState()).isEqualTo(PERMISSION_DENIED));
+        }
+    }
+
+    static Stream<Arguments> tablesAndPrivileges(List<String> tables, List<String> privileges) {
+        return tables.stream().flatMap(table -> privileges.stream().map(privilege -> Arguments.of(table, privilege)));
+    }
+
+    static Stream<Arguments> userTablesAndWritePrivileges() {
+        return tablesAndPrivileges(USER_TABLES, WRITE_PRIVILEGES);
+    }
+
+    static Stream<Arguments> businessTablesAndAllPrivileges() {
+        return tablesAndPrivileges(BUSINESS_TABLES, ALL_PRIVILEGES);
+    }
+
+    static Stream<Arguments> userTablesAndAllPrivileges() {
+        return tablesAndPrivileges(USER_TABLES, ALL_PRIVILEGES);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { APP_USER_TABLE, APP_USER_ROLE_TABLE })
+    @DisplayName("Should let the authorization server read the user tables")
+    void shouldLetTheAuthorizationServerReadTheUserTables(String table) {
+        assertThat(hasTablePrivilege(AUTH_ROLE, table, "SELECT")).isTrue();
+    }
+
+    @ParameterizedTest(name = "{0} {1}")
+    @MethodSource("userTablesAndWritePrivileges")
+    @DisplayName("Should keep the authorization server from changing or restructuring the user tables")
+    void shouldKeepTheAuthorizationServerFromChangingOrRestructuringTheUserTables(String table, String privilege) {
+        assertThat(hasTablePrivilege(AUTH_ROLE, table, privilege)).isFalse();
+    }
+
+    @ParameterizedTest(name = "{0} {1}")
+    @MethodSource("businessTablesAndAllPrivileges")
+    @DisplayName("Should keep the authorization server away from accounts and payments")
+    void shouldKeepTheAuthorizationServerAwayFromAccountsAndPayments(String table, String privilege) {
+        assertThat(hasTablePrivilege(AUTH_ROLE, table, privilege)).isFalse();
+    }
+
+    @ParameterizedTest(name = "{0} {1}")
+    @MethodSource("userTablesAndAllPrivileges")
+    @DisplayName("Should keep the consumer away from the user tables")
+    void shouldKeepTheConsumerAwayFromTheUserTables(String table, String privilege) {
+        assertThat(hasTablePrivilege(CONSUMER_ROLE, table, privilege)).isFalse();
+    }
+
+    @ParameterizedTest(name = "{0} {1}")
+    @MethodSource("userTablesAndAllPrivileges")
+    @DisplayName("Should keep the producer away from the user tables")
+    void shouldKeepTheProducerAwayFromTheUserTables(String table, String privilege) {
+        assertThat(hasTablePrivilege(PRODUCER_ROLE, table, privilege)).isFalse();
+    }
+
+    @Test
+    @DisplayName("Should let the authorization server log in and read the users")
+    void shouldLetTheAuthorizationServerLogInAndReadTheUsers() throws SQLException {
+        try (Connection auth = loginAs(AUTH_ROLE, AUTH_PASSWORD)) {
+            execute(auth, SELECT_USERS);
+        }
+    }
+
+    @Test
+    @DisplayName("Should refuse the authorization server a write to the users")
+    void shouldRefuseTheAuthorizationServerAWriteToTheUsers() throws SQLException {
+        try (Connection auth = loginAs(AUTH_ROLE, AUTH_PASSWORD)) {
+            assertThatThrownBy(() -> execute(auth, INSERT_USER, "intruder", "{base64}ZGVtbw=="))
+                    .isInstanceOfSatisfying(SQLException.class,
+                            failure -> assertThat(failure.getSQLState()).isEqualTo(PERMISSION_DENIED));
+        }
+    }
+
+    @Test
+    @DisplayName("Should refuse the authorization server a read of accounts and payments")
+    void shouldRefuseTheAuthorizationServerAReadOfAccountsAndPayments() throws SQLException {
+        try (Connection auth = loginAs(AUTH_ROLE, AUTH_PASSWORD)) {
+            assertThatThrownBy(() -> execute(auth, SELECT_ACCOUNTS))
+                    .isInstanceOfSatisfying(SQLException.class,
+                            failure -> assertThat(failure.getSQLState()).isEqualTo(PERMISSION_DENIED));
+            assertThatThrownBy(() -> execute(auth, SELECT_PAYMENTS))
+                    .isInstanceOfSatisfying(SQLException.class,
+                            failure -> assertThat(failure.getSQLState()).isEqualTo(PERMISSION_DENIED));
+        }
+    }
+
+    @Test
+    @DisplayName("Should refuse the producer and the consumer a read of the users")
+    void shouldRefuseTheProducerAndTheConsumerAReadOfTheUsers() throws SQLException {
+        try (Connection producer = loginAs(PRODUCER_ROLE, PRODUCER_PASSWORD);
+                Connection consumer = loginAs(CONSUMER_ROLE, CONSUMER_PASSWORD)) {
+            assertThatThrownBy(() -> execute(producer, SELECT_USERS))
+                    .isInstanceOfSatisfying(SQLException.class,
+                            failure -> assertThat(failure.getSQLState()).isEqualTo(PERMISSION_DENIED));
+            assertThatThrownBy(() -> execute(consumer, SELECT_USERS))
                     .isInstanceOfSatisfying(SQLException.class,
                             failure -> assertThat(failure.getSQLState()).isEqualTo(PERMISSION_DENIED));
         }

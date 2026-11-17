@@ -251,8 +251,8 @@ flowchart TD
 | `V1`, `V2` | `ACCOUNT` (unique `number`, soft-delete `active` column); producer role gets CRUD on it |
 | `V3` | `PAYMENT`: unique `transaction_id`, FKs from source and target account to `ACCOUNT(number)`, `amount > 0` |
 | `V4` | consumer role gets `SELECT, INSERT` on `PAYMENT` |
-| `scripts/init-db.sql` | roles `payment-admin`, `payment-producer-app`, `payment-consumer-app` and the `payment` schema |
-| `scripts/init-vault.sh` | one secret per app, `secret/payment-producer-api` and `secret/payment-consumer-api` |
+| `scripts/init-db.sql` | roles `payment-admin`, `payment-producer-app`, `payment-consumer-app`, `payment-auth-app` and the `payment` schema |
+| `scripts/init-vault.sh` | one secret per app, `secret/payment-producer-api` and `secret/payment-consumer-api`, plus `secret/payment-auth-server` (database role and OAuth2 client secrets) for the authorization server coming next |
 | `monitoring/` | Prometheus scrape config, 3 Grafana dashboards, traffic generator and screenshot scripts |
 
 ## 7. Structural notes

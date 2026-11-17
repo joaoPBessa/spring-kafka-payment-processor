@@ -25,6 +25,13 @@ vault kv put secret/payment-consumer-api \
   spring.datasource.username="payment-consumer-app" \
   spring.datasource.password="Zx7mP4rQd9LkV2nT"
 
+echo "🔐 Seeding the authorization server credentials into Vault (database role and OAuth2 client secrets)..."
+vault kv put secret/payment-auth-server \
+  spring.datasource.username="payment-auth-app" \
+  spring.datasource.password="Hq5vN8cWm3TbJ6sE" \
+  app.auth.clients.prometheus.secret="Pr0m3th3us-Cl1ent-D3mo" \
+  app.auth.clients.traffic-generator.secret="Tr4ff1c-G3n-Cl1ent-D3mo"
+
 echo "🧹 Removing the legacy shared secret..."
 vault kv metadata delete secret/spring-kafka-payment-processor || true
 
