@@ -1,0 +1,22 @@
+spring:
+  cloud:
+    vault:
+      enabled: false
+  flyway:
+    enabled: true
+    schemas: payment
+    locations: classpath:db/migration
+
+management:
+  health:
+    vault:
+      enabled: false
+
+# Test-only client secrets; in a real run they come from Vault.
+app:
+  auth:
+    clients:
+      prometheus:
+        secret: test-prometheus-secret
+      traffic-generator:
+        secret: test-traffic-generator-secret
