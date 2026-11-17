@@ -5,14 +5,13 @@ import java.util.List;
 
 import org.springframework.data.jpa.domain.Specification;
 
-import com.joaopbessa.payments.producer.api.dto.request.PageableAccountFilterRequestDTO;
 import com.joaopbessa.payments.producer.domain.entities.Account;
 
 import jakarta.persistence.criteria.Predicate;
 
 public class AccountSpecification {
 	
-	public static Specification<Account> filterBy(PageableAccountFilterRequestDTO filter) {
+	public static Specification<Account> filterBy(AccountFilter filter) {
 	    return (root, query, cb) -> {
 	        List<Predicate> predicates = new ArrayList<>();
 

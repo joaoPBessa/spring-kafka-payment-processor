@@ -19,6 +19,7 @@
         <avro.version>1.12.1</avro.version>
         <spring-cloud.version>2025.1.1</spring-cloud.version>
         <apicurio.version>3.0.8</apicurio.version>
+        <archunit.version>1.5.1</archunit.version>
     </properties>
 
     <modules>
@@ -53,6 +54,12 @@
 	            <groupId>io.apicurio</groupId>
 	            <artifactId>apicurio-registry-avro-serde-kafka</artifactId>
 	            <version>${apicurio.version}</version>
+	        </dependency>
+	        <dependency>
+	            <groupId>com.tngtech.archunit</groupId>
+	            <artifactId>archunit</artifactId>
+	            <version>${archunit.version}</version>
+	            <scope>test</scope>
 	        </dependency>
 	    </dependencies>
 	</dependencyManagement>
