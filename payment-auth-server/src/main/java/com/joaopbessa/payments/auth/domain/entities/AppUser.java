@@ -46,7 +46,6 @@ public class AppUser {
 	@Column(name = "CREATED_AT", insertable = false, updatable = false)
 	private Instant createdAt;
 
-	/** Lazy: a query that needs the roles asks for them (see {@code AppUserRepository#findByUsername}). */
 	@ElementCollection
 	@CollectionTable(name = "APP_USER_ROLE", joinColumns = @JoinColumn(name = "USER_ID"))
 	@Column(name = "ROLE", nullable = false, length = 50)
