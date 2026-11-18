@@ -3,6 +3,7 @@ package com.joaopbessa.payments.consumer.controllers;
 import java.util.List;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -15,6 +16,7 @@ import com.joaopbessa.payments.consumer.api.dto.response.DeadLetterMessageRespon
 import com.joaopbessa.payments.consumer.api.dto.response.DeadLetterReplayResponse;
 import com.joaopbessa.payments.consumer.dlt.DeadLetterReplayService;
 import com.joaopbessa.payments.consumer.dlt.DeadLetterService;
+import com.joaopbessa.payments.consumer.security.Roles;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -29,12 +31,14 @@ public class DeadLetterController {
 	private final DeadLetterService deadLetterService;
 	private final DeadLetterReplayService deadLetterReplayService;
 
+	@PreAuthorize(Roles.REQUIRES_DLT_VIEW)
 	@GetMapping
 	public List<DeadLetterMessageResponse> oldestDeadLetters() {
 		log.info("Received request to list the oldest dead letters");
 		return deadLetterService.oldestMessages().stream().map(DeadLetterMessageResponse::from).toList();
 	}
 
+	@PreAuthorize(Roles.REQUIRES_DLT_REPLAY)
 	@PostMapping("/replay")
 	@ResponseStatus(HttpStatus.ACCEPTED)
 	public DeadLetterReplayResponse replay(@Valid @RequestBody ReplayDeadLettersRequest request) {

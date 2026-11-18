@@ -3,13 +3,21 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
+  # /actuator/prometheus needs the METRICS_READ role: Prometheus is the `prometheus` client of payment-auth-server
+  # (client credentials) and fetches, and renews, its own token. The secret is read from a mounted file, see
+  # monitoring/prometheus/secrets; it is the same value as in the Vault secret of the authorization server.
   - job_name: payment-producer-api
     metrics_path: /actuator/prometheus
+    oauth2: &auth-server-token
+      client_id: prometheus
+      client_secret_file: /etc/prometheus/secrets/prometheus-client-secret
+      token_url: http://host.docker.internal:9000/oauth2/token
     static_configs:
       - targets: ["host.docker.internal:8081"]
 
   - job_name: payment-consumer-api
     metrics_path: /actuator/prometheus
+    oauth2: *auth-server-token
     static_configs:
       - targets: ["host.docker.internal:8082"]
 

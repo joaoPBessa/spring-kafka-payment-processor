@@ -1,6 +1,7 @@
 package com.joaopbessa.payments.consumer;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.methods;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_ACCESS_STANDARD_STREAMS;
 import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_USE_FIELD_INJECTION;
@@ -9,6 +10,7 @@ import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.sli
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -31,6 +33,7 @@ class ArchitectureTest {
     private static final String MAPPERS = BASE + ".mappers..";
     private static final String METRICS = BASE + ".metrics..";
     private static final String REPOSITORIES = BASE + ".repositories..";
+    private static final String SECURITY = BASE + ".security..";
     private static final String SERVICES = BASE + ".services..";
 
     private static JavaClasses consumerClasses;
@@ -52,7 +55,7 @@ class ArchitectureTest {
     @DisplayName("Should keep the dead letter package independent of the configuration and the API")
     void shouldKeepTheDeadLetterPackageIndependentOfTheConfigurationAndTheApi() {
         noClasses().that().resideInAPackage(DLT)
-                .should().dependOnClassesThat().resideInAnyPackage(CONFIG, API)
+                .should().dependOnClassesThat().resideInAnyPackage(CONFIG, API, SECURITY)
                 .check(consumerClasses);
     }
 
@@ -60,7 +63,7 @@ class ArchitectureTest {
     @DisplayName("Should keep the payment pipeline independent of the web layer and the dead letter package")
     void shouldKeepThePaymentPipelineIndependentOfTheWebLayerAndTheDeadLetterPackage() {
         noClasses().that().resideInAnyPackage(DOMAIN, REPOSITORIES, MAPPERS, SERVICES, LISTENERS)
-                .should().dependOnClassesThat().resideInAnyPackage(API, DLT, CONTROLLERS, CONFIG)
+                .should().dependOnClassesThat().resideInAnyPackage(API, DLT, CONTROLLERS, CONFIG, SECURITY)
                 .check(consumerClasses);
     }
 
@@ -69,7 +72,7 @@ class ArchitectureTest {
     void shouldKeepTheMetricsIndependentOfTheRestOfTheApplication() {
         noClasses().that().resideInAPackage(METRICS)
                 .should().dependOnClassesThat().resideInAnyPackage(
-                        API, CONFIG, CONTROLLERS, DLT, DOMAIN, LISTENERS, MAPPERS, REPOSITORIES, SERVICES)
+                        API, CONFIG, CONTROLLERS, DLT, DOMAIN, LISTENERS, MAPPERS, REPOSITORIES, SECURITY, SERVICES)
                 .check(consumerClasses);
     }
 
@@ -86,6 +89,15 @@ class ArchitectureTest {
     void shouldKeepTheRestControllersAndTheirAdviceInTheControllersPackage() {
         classes().that().areAnnotatedWith(RestController.class).or().areAnnotatedWith(RestControllerAdvice.class)
                 .should().resideInAPackage(CONTROLLERS)
+                .check(consumerClasses);
+    }
+
+    @Test
+    @DisplayName("Should protect every public controller method with @PreAuthorize")
+    void shouldProtectEveryPublicControllerMethodWithPreAuthorize() {
+        methods().that().areDeclaredInClassesThat().areAnnotatedWith(RestController.class)
+                .and().arePublic()
+                .should().beAnnotatedWith(PreAuthorize.class)
                 .check(consumerClasses);
     }
 

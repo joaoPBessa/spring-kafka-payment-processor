@@ -9,6 +9,15 @@ spring:
   mvc:
     problemdetails:
       enabled: true
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Tokens come from payment-auth-server. The signing keys are fetched lazily from its JWKS endpoint, so this
+          # application starts without it; issuer-uri only validates the iss claim (no OIDC discovery, which the
+          # authorization server does not serve).
+          issuer-uri: http://localhost:9000
+          jwk-set-uri: ${spring.security.oauth2.resourceserver.jwt.issuer-uri}/oauth2/jwks
 
   datasource:
     hikari:

@@ -18,7 +18,7 @@ payment.events ──► PaymentEventListener ──► PaymentPersistenceServic
 
 ## Observability
 
-The consumer exposes Actuator on port **8082** (`/actuator/health`, `/actuator/prometheus`). Besides the standard JVM, Hikari, repository and Kafka listener/client metrics, it publishes:
+The consumer exposes Actuator on port **8082** (`/actuator/health`, open; `/actuator/prometheus`, which needs the `METRICS_READ` role: Prometheus gets its own token, see the [root README](../README.md#observability)). Besides the standard JVM, Hikari, repository and Kafka listener/client metrics, it publishes:
 
 | Metric | Meaning |
 |---|---|
@@ -57,11 +57,38 @@ mvn -pl payment-consumer-api spring-boot:run
 
 The consumer has its own database role, `payment-consumer-app`, read from its own Vault secret (`secret/payment-consumer-api`). The role can only `SELECT` and `INSERT` on `payment.payment`. It does not run Flyway: the `db-migrate` service applies the migrations, so start the application after it has finished. `init-db.sql` runs only on an empty volume; to pick up a new role on an existing setup, recreate the Postgres volume (`docker compose rm -sf postgres && docker volume rm spring-kafka-payment-processor_postgres_data`). Publish a payment through the producer (`POST /api/v1/payments`) and the row appears in `payment.payment`.
 
+## Authentication and roles
+
+The consumer is an OAuth2 resource server: every request needs `Authorization: Bearer <JWT>`, issued by [`payment-auth-server`](../payment-auth-server/README.md). The application checks the signature (keys fetched from the issuer's JWKS endpoint, `jwk-set-uri`, on first use and then cached), the issuer (`issuer-uri`, compared with the `iss` claim only, with no OIDC discovery) and the expiry, and turns the `roles` claim into `ROLE_*` authorities. Each controller method declares the role it needs with `@PreAuthorize`. There is no role hierarchy: being allowed to replay does not allow viewing, and the other way round.
+
+| Role | Grants |
+| :--- | :--- |
+| `DLT_VIEW` | `GET /api/v1/dead-letters` |
+| `DLT_REPLAY` | `POST /api/v1/dead-letters/replay` |
+| `METRICS_READ` | `/actuator/prometheus` (`/actuator/health` is open) |
+
+The demonstration users are `dlt-viewer` (`DLT_VIEW`) and `dlt-operator` (`DLT_VIEW` and `DLT_REPLAY`):
+
+```bash
+TOKEN=$(scripts/get-token.sh dlt-operator dlt-operator-demo)   # from the repository root
+curl -H "Authorization: Bearer $TOKEN" localhost:8082/api/v1/dead-letters
+```
+
+| Situation | Answer |
+| :--- | :--- |
+| No token on a read, or a token that is invalid, expired or from another issuer | `401` |
+| No token on a request that changes state | `403`: CSRF protection is on, and a request without a Bearer token fails that check before authentication. With a Bearer header the request is exempt, because browsers do not send it on their own. |
+| A valid token without the required role | `403` as a problem detail |
+
+The authorization server does not have to be up for the application to start, and the health check keeps answering. But while the application has no signing key and cannot fetch one, a request that carries a token fails with a `500` (a request without a token still gets `401`); once a key is cached, short outages of the issuer go unnoticed. Because the issuer's key is generated at startup, restarting the authorization server invalidates the tokens issued before it. The Kafka consumer itself does not use the tokens: only the HTTP endpoints are protected.
+
 ## Inspecting the DLT
 
 ```bash
-curl localhost:8082/api/v1/dead-letters
+curl -H "Authorization: Bearer $TOKEN" localhost:8082/api/v1/dead-letters
 ```
+
+Needs the `DLT_VIEW` role.
 
 Returns the **10 oldest** messages in `payment.events.DLT`, oldest first (an empty array when there is none), so an operator can look at what failed before deciding to retry or to register a missing account first:
 
@@ -90,7 +117,7 @@ Returns the **10 oldest** messages in `payment.events.DLT`, oldest first (an emp
 - A record that is not a valid event (a poison pill) has `payload: null` and its original bytes in `raw_payload`, as text, or Base64 when the bytes are not UTF-8 text.
 - The endpoint only shows the payload; it does not say why the message failed or whether the accounts exist (check with `GET /api/v1/accounts/{number}` on the producer).
 - It reads the topic directly (assigned partitions, no consumer group, nothing committed), so calling it never affects the consumer. It answers `503` when Kafka cannot be reached.
-- There is no authentication: it exposes payment data, so keep it to local or operational use.
+- It exposes payment data, which is why it needs a token with `DLT_VIEW`.
 
 To see the raw records with their `kafka_dlt-*` headers (original topic, partition, offset, exception class, message and stack trace):
 
@@ -108,10 +135,10 @@ Events are published with the **`transaction_id` as the record key**, which is h
 
 **Daily replay.** Once a day (`app.dlt-replay.cron`, default 03:00 UTC) the consumer reads the DLT backlog, republishes it in offset order and then **deletes from the DLT what it replayed** (Kafka `deleteRecords`), so the DLT always holds only what is still pending and `GET /api/v1/dead-letters` shows exactly that. A message that fails again is dead-lettered again as a new record with the new error, and is retried the next day; there is no attempt limit yet. In a partition the run stops at the first message it cannot republish (nothing after it is deleted). At most `max-batch-size` messages per partition are replayed per run. There is no distributed lock, so run it on a single instance (a second one would only repeat the replay, harmlessly).
 
-**Forced replay.**
+**Forced replay.** Needs the `DLT_REPLAY` role: a replay republishes messages, so it is the most sensitive operation of the service.
 
 ```bash
-curl -X POST localhost:8082/api/v1/dead-letters/replay   -H 'Content-Type: application/json'   -d '{"transaction_ids": ["3640dcbd-e6d6-4a93-92ba-12844f3bcab6", "unknown-id"]}'
+curl -X POST localhost:8082/api/v1/dead-letters/replay   -H "Authorization: Bearer $TOKEN"   -H 'Content-Type: application/json'   -d '{"transaction_ids": ["3640dcbd-e6d6-4a93-92ba-12844f3bcab6", "unknown-id"]}'
 ```
 
 ```json
@@ -127,7 +154,6 @@ curl -X POST localhost:8082/api/v1/dead-letters/replay   -H 'Content-Type: appli
 - `202` means "sent back for processing", not "persisted": if it fails again it reappears in the DLT, and `payments_persisted_total` counts the successes.
 - If an id was dead-lettered more than once, the most recent record is replayed.
 - The forced replay **does not delete** anything (a record cannot be removed from the middle of a log): the message stays in the DLT until the next daily run, which sends it again (skipped as a duplicate) and then removes it.
-- Like the viewer, it has no authentication.
 
 Replays are counted in `payments_dead_letter_replayed_total{trigger="scheduled|manual",result="success|failure"}`.
 
@@ -137,6 +163,6 @@ Replays are counted in `payments_dead_letter_replayed_total{trigger="scheduled|m
 mvn -pl payment-consumer-api -am verify   # requires Docker for Testcontainers
 ```
 
-- **Unit:** `PaymentEventMapperTest`, `PaymentPersistenceServiceTest`, `PaymentEventListenerTest`, `KafkaConsumerPropertiesTest`, `KafkaConsumerErrorHandlingConfigTest`, and for the DLT view `DeadLetterReaderTest` (Kafka `MockConsumer`), `DeadLetterPayloadDecoderTest`, `DeadLetterServiceTest` `DeadLetterControllerTest` (`@WebMvcTest`), and for the replay `DeadLetterReplayerTest`, `DeadLetterTruncatorTest`, `DeadLetterReplayServiceTest`, `DeadLetterReplaySchedulerTest` and `DeadLetterReplayPropertiesTest`.
+- **Unit:** `PaymentEventMapperTest`, `PaymentPersistenceServiceTest`, `PaymentEventListenerTest`, `KafkaConsumerPropertiesTest`, `KafkaConsumerErrorHandlingConfigTest`, and for the DLT view `DeadLetterReaderTest` (Kafka `MockConsumer`), `DeadLetterPayloadDecoderTest`, `DeadLetterServiceTest`, `DeadLetterControllerTest` and `AccessControlTest` (`@WebMvcTest`; the second checks the behaviour behind the endpoints, the third every endpoint against every role, with tokens signed by the `TestJwtIssuer` of `common-libraries`), and for the replay `DeadLetterReplayerTest`, `DeadLetterTruncatorTest`, `DeadLetterReplayServiceTest`, `DeadLetterReplaySchedulerTest` and `DeadLetterReplayPropertiesTest`.
 - **Database (real Postgres):** `PaymentTableMigrationTest` applies V1–V3 and checks every constraint; `PaymentRepositoryTest` checks the mapping, which Hibernate also validates against the schema at startup.
-- **End to end (real Kafka, Apicurio, Postgres):** `PaymentConsumerIntegrationTest` covers a valid event, a duplicate, an unknown account, a non-positive amount, a transient failure that exhausts the retries, a transient failure that recovers, and a poison pill followed by a valid event. `DeadLetterEndpointIntegrationTest` has its own broker and checks the DLT view: empty, capped at the ten oldest in order with decoded payloads, and no consumer group left behind. `DeadLetterReplayIntegrationTest` (own broker) covers the forced replay by id, the daily run that clears what it replayed and sends back what still fails, no `kafka_dlt-*` headers piling up, and the topic emptying once the cause is fixed.
+- **End to end (real Kafka, Apicurio, Postgres):** `PaymentConsumerIntegrationTest` covers a valid event, a duplicate, an unknown account, a non-positive amount, a transient failure that exhausts the retries, a transient failure that recovers, and a poison pill followed by a valid event, plus the access rules over real HTTP (no token, a viewer who can read but not replay, an operator who can replay, metrics that need `METRICS_READ`). `DeadLetterEndpointIntegrationTest` has its own broker and checks the DLT view: empty, capped at the ten oldest in order with decoded payloads, and no consumer group left behind. `DeadLetterReplayIntegrationTest` (own broker) covers the forced replay by id, the daily run that clears what it replayed and sends back what still fails, no `kafka_dlt-*` headers piling up, and the topic emptying once the cause is fixed.

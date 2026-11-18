@@ -170,6 +170,7 @@ services:
       - "9090:9090"
     volumes:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/secrets/prometheus-client-secret:/etc/prometheus/secrets/prometheus-client-secret:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
