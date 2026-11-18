@@ -15,6 +15,7 @@ A multi-module payment-processing backend, built to explore account management a
 - A separate Kafka consumer that persists payments idempotently and routes anything it cannot save to a Dead Letter Topic after bounded, exponential retries.
 - Observability end to end: Prometheus metrics, Grafana dashboards (Apdex, Kafka lag, database query speed), distributed traces across the Kafka hop in Zipkin, and structured JSON logs.
 - Externalized configuration and secrets via HashiCorp Vault (Spring Cloud Vault).
+- OAuth2 with JWTs: an authorization server of its own (Spring Authorization Server) that signs people in against users stored in the database (authorization code + PKCE) and issues tokens to services (client credentials), with the roles carried in a claim.
 - Slice tests (`@WebMvcTest`) and full-context integration tests backed by Testcontainers.
 - Built on Spring Boot 4.0's newly modularized starters (`spring-boot-starter-webmvc`, `spring-boot-starter-webmvc-test`, etc.), released only recently.
 
@@ -24,8 +25,9 @@ A multi-module payment-processing backend, built to explore account management a
 |---|---|---|
 | [`payment-producer-api`](payment-producer-api/) | Spring Boot app | The actual service — REST API, JPA persistence, Redis cache, Vault-backed config. See its own [README](payment-producer-api/README.md) for endpoints and setup. |
 | [`payment-consumer-api`](payment-consumer-api/) | Spring Boot app (Actuator only, no controllers) | Consumes `payment.events`, writes each payment to Postgres exactly once, and dead-letters failures to `payment.events.DLT`. See its own [README](payment-consumer-api/README.md). |
-| `common-libraries` | jar | Shared domain types: the `PaymentMethod` enum and the `PaymentEvent` Avro schema (the Kafka wire contract), kept separate so both can be reused by future consumer modules. |
-| `payment-db-migration` | jar | Owns the Flyway SQL migrations and the `flyway-maven-plugin` binding. The `db-migrate` compose service applies them; the applications don't run Flyway. |
+| [`payment-auth-server`](payment-auth-server/) | Spring Boot app (port 9000) | The OAuth2 authorization server. Signs people in against the user tables and issues JWT access tokens carrying a `roles` claim; services get tokens with client credentials. Its own database role and Vault secret hold every credential. See its [README](payment-auth-server/README.md). |
+| `common-libraries` | jar | Shared domain types (the `PaymentMethod` enum and the `PaymentEvent` Avro schema, the Kafka wire contract) and the security building blocks the applications share: the password encoder and the JWT resource server configuration. |
+| `payment-db-migration` | jar | Owns the Flyway SQL migrations (accounts, payments and the application users) and the `flyway-maven-plugin` binding. The `db-migrate` compose service applies them; the applications don't run Flyway. |
 
 ## Feature status
 
@@ -85,7 +87,14 @@ mvn spring-boot:run
 # And, in another terminal, the consumer that persists the published payments
 cd payment-consumer-api
 mvn spring-boot:run
+
+# The authorization server (port 9000), then a token for a demonstration user
+cd payment-auth-server
+mvn spring-boot:run
+scripts/get-token.sh producer-client producer-client-demo
 ```
+
+> The new `payment-auth-app` database role is created by `init-db.sql`, which only runs on an empty Postgres volume. If your volume predates it, recreate it once: `docker compose rm -sf postgres && docker volume rm spring-kafka-payment-processor_postgres_data`, then `docker compose up -d --wait`. The demonstration users, their roles and how the tokens work are in the [auth server README](payment-auth-server/README.md); their passwords are Base64-encoded, which is an encoding and not a hash.
 
 ## Observability
 
@@ -133,8 +142,9 @@ mvn verify    # also runs the Testcontainers-backed integration test (requires D
 ```
 
 What the suites cover (the CI job summary lists the real totals of every run, so no counts are written here):
-- `common-libraries`: `PaymentMethod` mapping to and from Avro, the observation predicate that keeps actuator calls out of metrics and traces, the auto-configuration that registers it in both applications, and a guard that keeps every package name in lower case.
+- `common-libraries`: `PaymentMethod` mapping to and from Avro, the observation predicate that keeps actuator calls out of metrics and traces, the auto-configuration that registers it in both applications, the Base64 password encoder, the JWT resource server configuration (roles from the token, CSRF, open health, protected metrics) and the test token issuer, and a guard that keeps every package name in lower case.
 - `payment-producer-api`: `@WebMvcTest` slices for both controllers, unit tests for the account and payment services and the payment metrics, the `json-logs` profile, the per-app Vault secret, a send that must fail within seconds when the broker is down, the package-name guard, a full-context startup test, and an integration suite on real Kafka and Apicurio (round trip with the `traceparent` header, Prometheus scrape, health, cache hit counting, actuator exclusion).
+- `payment-auth-server`: a real Postgres for the repository mapping and a full-context test that runs the pool as the read-only `payment-auth-app` role (client credentials, authorization code with PKCE, bad logins, the published key, token lifetime); unit tests for the user lookup, the `roles` claim and the settings; and guards that keep credentials out of the configuration files.
 - `payment-consumer-api`: a real Postgres for the migration constraints, the repository mapping and the privilege matrix of the application roles; unit tests for the mapper, the idempotent persistence service, the metrics, the retry listener and the listener; configuration tests (properties validation, error handler, `json-logs`, Flyway and Vault bootstrap); the dead letter view and replay (reader, decoder, services, controller, replayer, truncator, scheduler); and integration suites on real Kafka, Apicurio and Postgres for the pipeline, the dead letter view and the replay.
 
 ## CI

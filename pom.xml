@@ -27,6 +27,7 @@
         <module>payment-db-migration</module>
         <module>payment-producer-api</module>
         <module>payment-consumer-api</module>
+        <module>payment-auth-server</module>
     </modules>
 
     <dependencyManagement>

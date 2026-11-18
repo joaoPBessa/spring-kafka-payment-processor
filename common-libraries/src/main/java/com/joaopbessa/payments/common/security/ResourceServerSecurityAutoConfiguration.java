@@ -41,13 +41,11 @@ import org.springframework.security.web.SecurityFilterChain;
 @EnableMethodSecurity
 public class ResourceServerSecurityAutoConfiguration {
 
-    private static final String AUTHORITY_PREFIX = "ROLE_";
-
     @Bean
     SecurityFilterChain resourceServerSecurityFilterChain(HttpSecurity http) {
         return http
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/actuator/health", "/actuator/health/**", "/error").permitAll()
+                        .requestMatchers(OpenEndpoints.paths()).permitAll()
                         .requestMatchers("/actuator/prometheus").hasRole(CommonRoles.METRICS_READ)
                         .anyRequest().authenticated())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -59,7 +57,7 @@ public class ResourceServerSecurityAutoConfiguration {
     private static JwtAuthenticationConverter rolesClaimConverter() {
         JwtGrantedAuthoritiesConverter authorities = new JwtGrantedAuthoritiesConverter();
         authorities.setAuthoritiesClaimName(TokenClaims.ROLES);
-        authorities.setAuthorityPrefix(AUTHORITY_PREFIX);
+        authorities.setAuthorityPrefix(TokenClaims.AUTHORITY_PREFIX);
 
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(authorities);

@@ -1,0 +1,45 @@
+server:
+  port: 9000
+
+spring:
+  application:
+    name: payment-auth-server
+
+  datasource:
+    hikari:
+      schema: payment
+      maximum-pool-size: 5
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+# The client secrets (app.auth.clients.<client>.secret) and the database credentials are not here:
+# they come from Vault (secret/payment-auth-server) and the application refuses to start without them.
+app:
+  auth:
+    issuer: http://localhost:9000
+    access-token-time-to-live: 15m
+    clients:
+      payments-cli:
+        redirect-uri: http://127.0.0.1:8085/callback
+      prometheus:
+        roles: METRICS_READ
+      traffic-generator:
+        roles: ACCOUNT_READ,ACCOUNT_WRITE,PAYMENT_CREATE
+
+---
+spring:
+  config:
+    activate:
+      on-profile: '!test'
+  datasource:
+    url: jdbc:postgresql://localhost:5432/payments_db
