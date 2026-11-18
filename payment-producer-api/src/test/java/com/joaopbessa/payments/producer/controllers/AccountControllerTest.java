@@ -24,9 +24,18 @@ import org.mockito.ArgumentMatcher;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+
+import com.joaopbessa.payments.common.security.ResourceServerSecurityAutoConfiguration;
+import com.joaopbessa.payments.common.security.TestJwtIssuer;
+import com.joaopbessa.payments.producer.TestJwtConfiguration;
+import com.joaopbessa.payments.producer.security.Roles;
 
 import com.joaopbessa.payments.producer.api.dto.request.CreateAccountRequestDTO;
 import com.joaopbessa.payments.producer.api.dto.request.PageableAccountFilterRequestDTO;
@@ -41,11 +50,21 @@ import tools.jackson.databind.json.JsonMapper;
     "spring.cloud.vault.enabled=false",
     "spring.cloud.bootstrap.enabled=false"
 })
+@Import({ ResourceServerSecurityAutoConfiguration.class, TestJwtConfiguration.class })
 @DisplayName("AccountController")
 class AccountControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private TestJwtIssuer issuer;
+
+    // Who may call which endpoint is covered by AccessControlTest; these tests are about the behaviour behind it.
+    private ResultActions performAuthorized(MockHttpServletRequestBuilder request) throws Exception {
+        return mockMvc.perform(request.header(HttpHeaders.AUTHORIZATION,
+                issuer.bearer(Roles.ACCOUNT_READ, Roles.ACCOUNT_WRITE)));
+    }
 
     @Autowired
     private JsonMapper objectMapper;
@@ -68,7 +87,7 @@ class AccountControllerTest {
 
         when(accountService.save(argThat(requestedAccount))).thenReturn(expectedResponse);
 
-        mockMvc.perform(post("/api/v1/accounts/")
+        performAuthorized(post("/api/v1/accounts/")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
@@ -86,7 +105,7 @@ class AccountControllerTest {
     void shouldReturn400WhenAccountNumberIsTooShort() throws Exception {
         var request = new CreateAccountRequestDTO("123", "João Pedro");
 
-        mockMvc.perform(post("/api/v1/accounts/")
+        performAuthorized(post("/api/v1/accounts/")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -99,7 +118,7 @@ class AccountControllerTest {
     void shouldReturn400WhenAccountNumberIsTooLong() throws Exception {
         var request = new CreateAccountRequestDTO("123456789", "João Pedro");
 
-        mockMvc.perform(post("/api/v1/accounts/")
+        performAuthorized(post("/api/v1/accounts/")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -112,7 +131,7 @@ class AccountControllerTest {
     void shouldReturn400WhenAccountNumberContainsLetters() throws Exception {
         var request = new CreateAccountRequestDTO("1234A", "João Pedro");
 
-        mockMvc.perform(post("/api/v1/accounts/")
+        performAuthorized(post("/api/v1/accounts/")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -125,7 +144,7 @@ class AccountControllerTest {
     void shouldReturn400WhenAccountNameIsBlankOnCreation() throws Exception {
         var request = new CreateAccountRequestDTO("123456", "   ");
 
-        mockMvc.perform(post("/api/v1/accounts/")
+        performAuthorized(post("/api/v1/accounts/")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -141,7 +160,7 @@ class AccountControllerTest {
 
         doNothing().when(accountService).updateAccountName(accountNumber, "João Pedro Bessa");
 
-        mockMvc.perform(patch("/api/v1/accounts/{accountNumber}", accountNumber)
+        performAuthorized(patch("/api/v1/accounts/{accountNumber}", accountNumber)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isNoContent());
@@ -156,7 +175,7 @@ class AccountControllerTest {
         String accountNumber = "123456";
         var request = new UpdateAccountRequestDTO("");
 
-        mockMvc.perform(patch("/api/v1/accounts/{accountNumber}", accountNumber)
+        performAuthorized(patch("/api/v1/accounts/{accountNumber}", accountNumber)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -171,7 +190,7 @@ class AccountControllerTest {
 
         doNothing().when(accountService).deleteAccount(accountNumber);
 
-        mockMvc.perform(delete("/api/v1/accounts/{accountNumber}", accountNumber))
+        performAuthorized(delete("/api/v1/accounts/{accountNumber}", accountNumber))
                 .andExpect(status().isNoContent());
 
         verify(accountService, times(1)).deleteAccount(accountNumber);
@@ -186,7 +205,7 @@ class AccountControllerTest {
 
         when(accountService.findByNumber(accountNumber)).thenReturn(expectedResponse);
 
-        mockMvc.perform(get("/api/v1/accounts/{accountNumber}", accountNumber)
+        performAuthorized(get("/api/v1/accounts/{accountNumber}", accountNumber)
                 .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.number").value(accountNumber))
@@ -205,7 +224,7 @@ class AccountControllerTest {
 
         when(accountService.findAccountsByFilter(expectedFilter)).thenReturn(pageResponse);
 
-        mockMvc.perform(get("/api/v1/accounts")
+        performAuthorized(get("/api/v1/accounts")
                 .param("account_number", "12345")
                 .param("account_name", "João")
                 .param("active", "true")
@@ -223,7 +242,7 @@ class AccountControllerTest {
     @Test
     @DisplayName("GET /api/v1/accounts -> Validation: Should return 400 Bad Request when required pagination parameters are missing")
     void shouldReturn400WhenPaginationParametersAreMissing() throws Exception {
-        mockMvc.perform(get("/api/v1/accounts")
+        performAuthorized(get("/api/v1/accounts")
                 .param("account_number", "12345"))
                 .andExpect(status().isBadRequest());
 
@@ -233,7 +252,7 @@ class AccountControllerTest {
     @Test
     @DisplayName("GET /api/v1/accounts -> Validation: Should return 400 Bad Request when page index is negative")
     void shouldReturn400WhenPageIndexIsNegative() throws Exception {
-        mockMvc.perform(get("/api/v1/accounts")
+        performAuthorized(get("/api/v1/accounts")
                 .param("page", "-1")
                 .param("size", "10"))
                 .andExpect(status().isBadRequest());
@@ -244,7 +263,7 @@ class AccountControllerTest {
     @Test
     @DisplayName("GET /api/v1/accounts -> Validation: Should return 400 Bad Request when page size is less than 1")
     void shouldReturn400WhenPageSizeIsLessThanOne() throws Exception {
-        mockMvc.perform(get("/api/v1/accounts")
+        performAuthorized(get("/api/v1/accounts")
                 .param("page", "0")
                 .param("size", "0"))
                 .andExpect(status().isBadRequest());
@@ -255,7 +274,7 @@ class AccountControllerTest {
     @Test
     @DisplayName("GET /api/v1/accounts -> Validation: Should return 400 Bad Request when account number filter is under 3 characters")
     void shouldReturn400WhenAccountNumberFilterIsTooShort() throws Exception {
-        mockMvc.perform(get("/api/v1/accounts")
+        performAuthorized(get("/api/v1/accounts")
                 .param("account_number", "12")
                 .param("page", "0")
                 .param("size", "10"))
@@ -267,7 +286,7 @@ class AccountControllerTest {
     @Test
     @DisplayName("GET /api/v1/accounts -> Validation: Should return 400 Bad Request when account name filter is under 3 characters")
     void shouldReturn400WhenAccountNameFilterIsTooShort() throws Exception {
-        mockMvc.perform(get("/api/v1/accounts")
+        performAuthorized(get("/api/v1/accounts")
                 .param("account_name", "Jo")
                 .param("page", "0")
                 .param("size", "10"))

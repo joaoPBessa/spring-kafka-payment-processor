@@ -6,6 +6,15 @@ spring:
     name: payment-producer-api
   jackson:
     property-naming-strategy: SNAKE_CASE
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Tokens come from payment-auth-server. The signing keys are fetched lazily from its JWKS endpoint, so this
+          # application starts without it; issuer-uri only validates the iss claim (no OIDC discovery, which the
+          # authorization server does not serve).
+          issuer-uri: http://localhost:9000
+          jwk-set-uri: ${spring.security.oauth2.resourceserver.jwt.issuer-uri}/oauth2/jwks
 
   datasource:
     url: jdbc:postgresql://localhost:5432/payments_db

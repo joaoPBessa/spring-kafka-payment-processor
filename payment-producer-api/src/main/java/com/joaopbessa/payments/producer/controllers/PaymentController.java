@@ -2,6 +2,7 @@ package com.joaopbessa.payments.producer.controllers;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -9,6 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.joaopbessa.payments.producer.api.dto.request.PaymentRequestDTO;
 import com.joaopbessa.payments.producer.api.dto.response.PaymentResponseDTO;
+import com.joaopbessa.payments.producer.security.Roles;
 import com.joaopbessa.payments.producer.services.PaymentService;
 
 import jakarta.validation.Valid;
@@ -23,6 +25,7 @@ public class PaymentController {
 
 	private final PaymentService paymentService;
 
+	@PreAuthorize(Roles.REQUIRES_PAYMENT_CREATE)
 	@PostMapping
     public ResponseEntity<PaymentResponseDTO> createPayment(@RequestBody @Valid PaymentRequestDTO request) {
         log.info("Receiving payment request. Source account: {}, amount: {}",
