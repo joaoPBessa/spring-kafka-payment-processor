@@ -9,10 +9,10 @@ Static map of the repository, drawn on branch `feat/dlt-replay` and refreshed af
 | `common-libraries` | jar | 9 (296) | 11 (780) | `PaymentMethod` enum, `PaymentEvent.avsc` (Avro schema → generated `PaymentEvent`), `ActuatorObservationPredicate`, the shared security building blocks (`Base64PasswordEncoder`, `PasswordEncoderAutoConfiguration`, `ResourceServerSecurityAutoConfiguration`, `TokenClaims`, `CommonRoles`, `OpenEndpoints`), test helpers `PrometheusText` and `TestJwtIssuer` (test-jar) |
 | `payment-db-migration` | jar (SQL only) | – | – | Flyway migrations V1–V6 (accounts, payments, application users and their seed); applied by the `db-migrate` compose service, test dependency of the consumer and the auth server |
 | `payment-producer-api` | Spring Boot, :8081 | 27 (932) | 18 (2,077) | Account REST API (JPA + Redis cache) and the payment endpoint that publishes Avro events to Kafka |
-| `payment-consumer-api` | Spring Boot, :8082 | 36 (1,344) | 32 (4,184) | Consumes `payment.events`, persists payments, dead-letters failures, exposes the DLT view and replay |
+| `payment-consumer-api` | Spring Boot, :8082 | 37 (1,374) | 37 (4,558) | Consumes `payment.events`, persists payments, dead-letters failures, exposes the DLT view and replay |
 | `payment-auth-server` | Spring Boot, :9000 | 7 (335) | 11 (1,143) | OAuth2 authorization server: users from the database, authorization code + PKCE for people, client credentials for services, JWT with a `roles` claim |
 
-Totals: 209 tracked files, 79 main + 72 test Java classes (2,907 / 8,184 lines). Infrastructure lives in `docker-compose.yml`, `scripts/` (Postgres roles, Vault seed) and `monitoring/` (Prometheus, Grafana dashboards).
+Totals: 217 tracked files, 80 main + 77 test Java classes (2,937 / 8,558 lines). Infrastructure lives in `docker-compose.yml`, `scripts/` (Postgres roles, Vault seed) and `monitoring/` (Prometheus, Grafana dashboards).
 
 ## 2. Runtime architecture
 
@@ -41,7 +41,9 @@ flowchart LR
 
   client -->|"POST /api/v1/accounts, /payments<br/>Bearer JWT"| producer
   producer -.->|"JWKS, issuer"| authserver
-  client -->|"GET dead-letters, POST replay"| consumer
+  client -->|"GET dead-letters, POST replay<br/>Bearer JWT"| consumer
+  consumer -.->|"JWKS, issuer"| authserver
+  prom -.->|"client credentials<br/>(prometheus client)"| authserver
 
   producer -->|"JPA as payment-producer-app<br/>(ACCOUNT only)"| pg
   producer -->|"@Cacheable account lookup"| redis
@@ -248,7 +250,8 @@ flowchart TD
 | `repositories` / `domain.entities` | `PaymentRepository`, `Payment` |
 | `config` | `KafkaConsumerErrorHandlingConfig` (error handler, DLT producers, topic), `KafkaConsumerProperties`, `DeadLetterViewConfig`, `DeadLetterReplayConfig`, `DeadLetterReplayProperties` |
 | `dlt` (13 classes) | View: `DeadLetterReader`, `DeadLetterPayloadDecoder`, `DeadLetterPayload`, `DeadLetterService`. Replay: `DeadLetterReplayer`, `DeadLetterTruncator`, `DeadLetterReplayService`, `DeadLetterReplayScheduler`, `ReplayResult`, `ReplayOutcome`, `ReplaySummary`. Errors: `DeadLetterReadException`, `DeadLetterReplayException` |
-| `controllers` | `DeadLetterController` (GET list, POST replay), `DeadLetterExceptionHandler` (503 problem detail) |
+| `controllers` | `DeadLetterController` (GET list needs `DLT_VIEW`, POST replay needs `DLT_REPLAY`), `DeadLetterExceptionHandler` (503 and 403 problem details) |
+| `security` | `Roles` (`DLT_VIEW`, `DLT_REPLAY` and the `@PreAuthorize` expressions) |
 | `api.dto` | `ReplayDeadLettersRequest`; `DeadLetterMessageResponse`, `PaymentEventResponse`, `DeadLetterReplayResponse`, `DeadLetterReplayResultResponse` |
 | `metrics` | `PaymentConsumerMetrics`, `RetryMetricsListener`, `DeadLetterKind`, `ReplayTrigger` |
 
@@ -270,7 +273,7 @@ flowchart TD
 | `scripts/init-db.sql` | roles `payment-admin`, `payment-producer-app`, `payment-consumer-app`, `payment-auth-app` and the `payment` schema |
 | `scripts/init-vault.sh` | one secret per app, `secret/payment-producer-api` and `secret/payment-consumer-api`, plus `secret/payment-auth-server` (database role and OAuth2 client secrets) read by the authorization server |
 | `scripts/get-token.sh` | authorization code + PKCE against the auth server without a browser; prints an access token |
-| `monitoring/` | Prometheus scrape config, 3 Grafana dashboards, traffic generator and screenshot scripts |
+| `monitoring/` | Prometheus scrape config (with the `oauth2` block and the mounted client secret file), 3 Grafana dashboards, traffic generator (client credentials) and screenshot scripts |
 
 ## 7. Structural notes
 
