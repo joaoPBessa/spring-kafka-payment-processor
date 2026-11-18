@@ -23,7 +23,7 @@ A multi-module payment-processing backend, built to explore account management a
 
 | Module | Type | What it is |
 |---|---|---|
-| [`payment-producer-api`](payment-producer-api/) | Spring Boot app | The actual service — REST API, JPA persistence, Redis cache, Vault-backed config. See its own [README](payment-producer-api/README.md) for endpoints and setup. |
+| [`payment-producer-api`](payment-producer-api/) | Spring Boot app | The actual service — REST API, JPA persistence, Redis cache, Vault-backed config. An OAuth2 resource server: each endpoint needs a JWT with its own role (`ACCOUNT_READ`, `ACCOUNT_WRITE`, `PAYMENT_CREATE`). See its own [README](payment-producer-api/README.md) for endpoints and setup. |
 | [`payment-consumer-api`](payment-consumer-api/) | Spring Boot app (Actuator only, no controllers) | Consumes `payment.events`, writes each payment to Postgres exactly once, and dead-letters failures to `payment.events.DLT`. See its own [README](payment-consumer-api/README.md). |
 | [`payment-auth-server`](payment-auth-server/) | Spring Boot app (port 9000) | The OAuth2 authorization server. Signs people in against the user tables and issues JWT access tokens carrying a `roles` claim; services get tokens with client credentials. Its own database role and Vault secret hold every credential. See its [README](payment-auth-server/README.md). |
 | `common-libraries` | jar | Shared domain types (the `PaymentMethod` enum and the `PaymentEvent` Avro schema, the Kafka wire contract) and the security building blocks the applications share: the password encoder and the JWT resource server configuration. |
@@ -91,7 +91,8 @@ mvn spring-boot:run
 # The authorization server (port 9000), then a token for a demonstration user
 cd payment-auth-server
 mvn spring-boot:run
-scripts/get-token.sh producer-client producer-client-demo
+TOKEN=$(scripts/get-token.sh producer-client producer-client-demo)
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/accounts?page=0&size=10"
 ```
 
 > The new `payment-auth-app` database role is created by `init-db.sql`, which only runs on an empty Postgres volume. If your volume predates it, recreate it once: `docker compose rm -sf postgres && docker volume rm spring-kafka-payment-processor_postgres_data`, then `docker compose up -d --wait`. The demonstration users, their roles and how the tokens work are in the [auth server README](payment-auth-server/README.md); their passwords are Base64-encoded, which is an encoding and not a hash.
@@ -105,7 +106,7 @@ With `docker-compose up -d` running and both applications started, everything is
 | Grafana dashboards (anonymous access, no login) | http://localhost:3000 |
 | Prometheus | http://localhost:9090 |
 | Zipkin traces | http://localhost:9411 |
-| Producer metrics / health | http://localhost:8081/actuator/prometheus, `/actuator/health` |
+| Producer metrics / health | http://localhost:8081/actuator/prometheus (needs a token with `METRICS_READ`), `/actuator/health` (open) |
 | Consumer metrics / health | http://localhost:8082/actuator/prometheus, `/actuator/health` |
 
 Prometheus scrapes both applications (running on the host) and a Kafka exporter, so consumer group lag and the size of the dead letter topic are visible even when an application is down. Run an application with `-Dspring-boot.run.profiles=json-logs` to get ECS-formatted JSON logs that carry the `traceId` and `spanId`.
