@@ -15,9 +15,18 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+
+import com.joaopbessa.payments.common.security.ResourceServerSecurityAutoConfiguration;
+import com.joaopbessa.payments.common.security.TestJwtIssuer;
+import com.joaopbessa.payments.producer.TestJwtConfiguration;
+import com.joaopbessa.payments.producer.security.Roles;
 
 import com.joaopbessa.payments.producer.api.dto.request.PaymentRequestDTO;
 import com.joaopbessa.payments.producer.exceptions.AccountNotFoundException;
@@ -31,6 +40,7 @@ import tools.jackson.databind.json.JsonMapper;
     "spring.cloud.vault.enabled=false",
     "spring.cloud.bootstrap.enabled=false"
 })
+@Import({ ResourceServerSecurityAutoConfiguration.class, TestJwtConfiguration.class })
 @DisplayName("PaymentController")
 class PaymentControllerTest {
 
@@ -38,6 +48,14 @@ class PaymentControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private TestJwtIssuer issuer;
+
+    // Who may call which endpoint is covered by AccessControlTest; these tests are about the behaviour behind it.
+    private ResultActions performAuthorized(MockHttpServletRequestBuilder request) throws Exception {
+        return mockMvc.perform(request.header(HttpHeaders.AUTHORIZATION, issuer.bearer(Roles.PAYMENT_CREATE)));
+    }
 
     @Autowired
     private JsonMapper objectMapper;
@@ -52,7 +70,7 @@ class PaymentControllerTest {
 
         when(paymentService.publishPayment(request)).thenReturn(TRANSACTION_ID);
 
-        mockMvc.perform(post("/api/v1/payments")
+        performAuthorized(post("/api/v1/payments")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isAccepted())
@@ -73,7 +91,7 @@ class PaymentControllerTest {
         when(paymentService.publishPayment(request))
                 .thenThrow(new PaymentPublishException("Failed to publish payment event to Kafka within PT5S", new RuntimeException()));
 
-        mockMvc.perform(post("/api/v1/payments")
+        performAuthorized(post("/api/v1/payments")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isServiceUnavailable());
@@ -90,7 +108,7 @@ class PaymentControllerTest {
         when(paymentService.publishPayment(request))
                 .thenThrow(new AccountNotFoundException("Account 123456 not found"));
 
-        mockMvc.perform(post("/api/v1/payments")
+        performAuthorized(post("/api/v1/payments")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isNotFound());
@@ -104,7 +122,7 @@ class PaymentControllerTest {
     void shouldReturn400WhenSourceAccountIsBlank() throws Exception {
         var request = new PaymentRequestDTO("   ", "654321", new BigDecimal("150.75"), "usd", PaymentMethod.PIX);
 
-        mockMvc.perform(post("/api/v1/payments")
+        performAuthorized(post("/api/v1/payments")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -117,7 +135,7 @@ class PaymentControllerTest {
     void shouldReturn400WhenTargetAccountIsBlank() throws Exception {
         var request = new PaymentRequestDTO("123456", "   ", new BigDecimal("150.75"), "usd", PaymentMethod.PIX);
 
-        mockMvc.perform(post("/api/v1/payments")
+        performAuthorized(post("/api/v1/payments")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -130,7 +148,7 @@ class PaymentControllerTest {
     void shouldReturn400WhenAmountIsNull() throws Exception {
         var request = new PaymentRequestDTO("123456", "654321", null, "usd", PaymentMethod.PIX);
 
-        mockMvc.perform(post("/api/v1/payments")
+        performAuthorized(post("/api/v1/payments")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -143,7 +161,7 @@ class PaymentControllerTest {
     void shouldReturn400WhenAmountIsZero() throws Exception {
         var request = new PaymentRequestDTO("123456", "654321", BigDecimal.ZERO, "usd", PaymentMethod.PIX);
 
-        mockMvc.perform(post("/api/v1/payments")
+        performAuthorized(post("/api/v1/payments")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -156,7 +174,7 @@ class PaymentControllerTest {
     void shouldReturn400WhenAmountIsNegative() throws Exception {
         var request = new PaymentRequestDTO("123456", "654321", new BigDecimal("-10.00"), "usd", PaymentMethod.PIX);
 
-        mockMvc.perform(post("/api/v1/payments")
+        performAuthorized(post("/api/v1/payments")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -169,7 +187,7 @@ class PaymentControllerTest {
     void shouldReturn400WhenCurrencyIsBlank() throws Exception {
         var request = new PaymentRequestDTO("123456", "654321", new BigDecimal("150.75"), "   ", PaymentMethod.PIX);
 
-        mockMvc.perform(post("/api/v1/payments")
+        performAuthorized(post("/api/v1/payments")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -182,7 +200,7 @@ class PaymentControllerTest {
     void shouldReturn400WhenCurrencyIsTooShort() throws Exception {
         var request = new PaymentRequestDTO("123456", "654321", new BigDecimal("150.75"), "us", PaymentMethod.PIX);
 
-        mockMvc.perform(post("/api/v1/payments")
+        performAuthorized(post("/api/v1/payments")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -195,7 +213,7 @@ class PaymentControllerTest {
     void shouldReturn400WhenCurrencyIsTooLong() throws Exception {
         var request = new PaymentRequestDTO("123456", "654321", new BigDecimal("150.75"), "usdt", PaymentMethod.PIX);
 
-        mockMvc.perform(post("/api/v1/payments")
+        performAuthorized(post("/api/v1/payments")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -208,7 +226,7 @@ class PaymentControllerTest {
     void shouldReturn400WhenPaymentMethodIsNull() throws Exception {
         var request = new PaymentRequestDTO("123456", "654321", new BigDecimal("150.75"), "usd", null);
 
-        mockMvc.perform(post("/api/v1/payments")
+        performAuthorized(post("/api/v1/payments")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -229,7 +247,7 @@ class PaymentControllerTest {
                 }
                 """;
 
-        mockMvc.perform(post("/api/v1/payments")
+        performAuthorized(post("/api/v1/payments")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(rawBody))
                 .andExpect(status().isBadRequest());
@@ -242,7 +260,7 @@ class PaymentControllerTest {
     void shouldReturn400WhenCurrencyIsNotAlphabetic() throws Exception {
         var request = new PaymentRequestDTO("123456", "654321", new BigDecimal("150.75"), "x1!", PaymentMethod.PIX);
 
-        mockMvc.perform(post("/api/v1/payments")
+        performAuthorized(post("/api/v1/payments")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());

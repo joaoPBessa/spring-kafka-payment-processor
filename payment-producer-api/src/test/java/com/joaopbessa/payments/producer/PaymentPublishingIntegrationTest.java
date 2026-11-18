@@ -26,6 +26,9 @@ import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.ActiveProfiles;
@@ -37,6 +40,9 @@ import com.joaopbessa.payments.producer.repositories.AccountRepository;
 import com.joaopbessa.payments.common.avro.PaymentEvent;
 import com.joaopbessa.payments.common.domain.PaymentMethod;
 import com.joaopbessa.payments.common.observability.PrometheusText;
+import com.joaopbessa.payments.common.security.CommonRoles;
+import com.joaopbessa.payments.common.security.TestJwtIssuer;
+import com.joaopbessa.payments.producer.security.Roles;
 
 import io.apicurio.registry.serde.avro.AvroKafkaDeserializer;
 
@@ -45,17 +51,36 @@ import io.apicurio.registry.serde.avro.AvroKafkaDeserializer;
 @AutoConfigureTracing
 @AutoConfigureTestRestTemplate
 @ActiveProfiles("test")
-@Import(TestcontainersConfiguration.class)
+@Import({ TestcontainersConfiguration.class, TestJwtConfiguration.class })
 @DisplayName("Payment publishing (Testcontainers integration)")
 class PaymentPublishingIntegrationTest {
 
     private static final String TRACE_PARENT_HEADER = "traceparent";
+    private static final String PAYMENTS_PATH = "/api/v1/payments";
+    private static final String PROMETHEUS_PATH = "/actuator/prometheus";
 
     @Value("${spring.kafka.producer.properties.apicurio.registry.url}")
     private String registryUrl;
 
     @Autowired
     private TestRestTemplate restTemplate;
+
+    @Autowired
+    private TestJwtIssuer issuer;
+
+    private HttpEntity<Object> withRoles(Object body, String... roles) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(HttpHeaders.AUTHORIZATION, issuer.bearer(roles));
+        return new HttpEntity<>(body, headers);
+    }
+
+    private <T> ResponseEntity<T> post(String path, Object body, Class<T> responseType, String... roles) {
+        return restTemplate.exchange(path, HttpMethod.POST, withRoles(body, roles), responseType);
+    }
+
+    private <T> ResponseEntity<T> get(String path, Class<T> responseType, String... roles) {
+        return restTemplate.exchange(path, HttpMethod.GET, withRoles(null, roles), responseType);
+    }
 
     @Autowired
     private AccountRepository accountRepository;
@@ -94,7 +119,7 @@ class PaymentPublishingIntegrationTest {
         var request = new PaymentRequestDTO("111111", "222222", new BigDecimal("150.75"), "usd", PaymentMethod.PIX);
 
         ResponseEntity<PaymentResponseDTO> httpResponse =
-                restTemplate.postForEntity("/api/v1/payments", request, PaymentResponseDTO.class);
+                post("/api/v1/payments", request, PaymentResponseDTO.class, Roles.PAYMENT_CREATE);
 
         assertThat(httpResponse.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
         String transactionId = httpResponse.getBody().transactionCode();
@@ -128,7 +153,7 @@ class PaymentPublishingIntegrationTest {
         createActiveAccount("444441");
         createActiveAccount("444442");
         var request = new PaymentRequestDTO("444441", "444442", new BigDecimal("10.00"), "usd", PaymentMethod.PIX);
-        restTemplate.postForEntity("/api/v1/payments", request, PaymentResponseDTO.class);
+        post("/api/v1/payments", request, PaymentResponseDTO.class, Roles.PAYMENT_CREATE);
 
         PrometheusText scrape = scrape();
 
@@ -145,10 +170,10 @@ class PaymentPublishingIntegrationTest {
     @DisplayName("Should count account lookups served from the cache")
     void shouldCountAccountLookupsServedFromTheCache() {
         createActiveAccount("555551");
-        restTemplate.getForEntity("/api/v1/accounts/555551", String.class);
+        get("/api/v1/accounts/555551", String.class, Roles.ACCOUNT_READ);
         double hitsBefore = scrape().sum("cache_gets_total", "cache=\"accounts\"", "result=\"hit\"");
 
-        restTemplate.getForEntity("/api/v1/accounts/555551", String.class);
+        get("/api/v1/accounts/555551", String.class, Roles.ACCOUNT_READ);
 
         double hitsAfter = scrape().sum("cache_gets_total", "cache=\"accounts\"", "result=\"hit\"");
         assertThat(hitsAfter - hitsBefore).isEqualTo(1.0);
@@ -175,7 +200,54 @@ class PaymentPublishingIntegrationTest {
     }
 
     private PrometheusText scrape() {
-        return new PrometheusText(restTemplate.getForObject("/actuator/prometheus", String.class));
+        return new PrometheusText(get("/actuator/prometheus", String.class, CommonRoles.METRICS_READ).getBody());
+    }
+
+    @Test
+    @DisplayName("Should refuse a request that carries no token")
+    void shouldRefuseARequestWithoutAToken() {
+        // A read is refused by the missing authentication (401); a write fails the CSRF check first (403).
+        assertThat(restTemplate.getForEntity("/api/v1/accounts/555552", String.class).getStatusCode())
+                .isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(restTemplate.postForEntity(PAYMENTS_PATH, paymentRequest(), String.class).getStatusCode())
+                .isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("Should answer 401 to a token that was not signed by the authorization server")
+    void shouldAnswer401ToATokenFromAnotherIssuer() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(HttpHeaders.AUTHORIZATION, new TestJwtIssuer().bearer(Roles.PAYMENT_CREATE));
+
+        ResponseEntity<String> response = restTemplate.exchange(PAYMENTS_PATH, HttpMethod.POST,
+                new HttpEntity<>(paymentRequest(), headers), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    @DisplayName("Should refuse a payment from a caller that may only read accounts")
+    void shouldRefuseAPaymentFromACallerThatMayOnlyReadAccounts() {
+        ResponseEntity<String> response = post(PAYMENTS_PATH, paymentRequest(), String.class, Roles.ACCOUNT_READ);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("Should protect the metrics endpoint with the METRICS_READ role while keeping the health open")
+    void shouldProtectTheMetricsEndpointWhileKeepingTheHealthOpen() {
+        assertThat(restTemplate.getForEntity(PROMETHEUS_PATH, String.class).getStatusCode())
+                .isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(get(PROMETHEUS_PATH, String.class, Roles.PAYMENT_CREATE).getStatusCode())
+                .isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(get(PROMETHEUS_PATH, String.class, CommonRoles.METRICS_READ).getStatusCode())
+                .isEqualTo(HttpStatus.OK);
+        assertThat(restTemplate.getForEntity("/actuator/health", String.class).getStatusCode())
+                .isEqualTo(HttpStatus.OK);
+    }
+
+    private PaymentRequestDTO paymentRequest() {
+        return new PaymentRequestDTO("111111", "222222", new BigDecimal("1.00"), "usd", PaymentMethod.PIX);
     }
 
     @Test
@@ -184,7 +256,7 @@ class PaymentPublishingIntegrationTest {
         createActiveAccount("333333");
         var request = new PaymentRequestDTO("000000", "333333", new BigDecimal("150.75"), "usd", PaymentMethod.PIX);
 
-        ResponseEntity<String> httpResponse = restTemplate.postForEntity("/api/v1/payments", request, String.class);
+        ResponseEntity<String> httpResponse = post("/api/v1/payments", request, String.class, Roles.PAYMENT_CREATE);
 
         assertThat(httpResponse.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }

@@ -5,6 +5,7 @@ import java.net.URI;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -20,6 +21,7 @@ import com.joaopbessa.payments.producer.api.dto.request.CreateAccountRequestDTO;
 import com.joaopbessa.payments.producer.api.dto.request.PageableAccountFilterRequestDTO;
 import com.joaopbessa.payments.producer.api.dto.request.UpdateAccountRequestDTO;
 import com.joaopbessa.payments.producer.api.dto.response.AccountResponseDTO;
+import com.joaopbessa.payments.producer.security.Roles;
 import com.joaopbessa.payments.producer.services.AccountService;
 
 import jakarta.validation.Valid;
@@ -34,6 +36,7 @@ public class AccountController {
 	
 	private final AccountService service;
 
+	@PreAuthorize(Roles.REQUIRES_ACCOUNT_WRITE)
 	@PostMapping("/")
 	public ResponseEntity<AccountResponseDTO> createAccount(@RequestBody @Valid CreateAccountRequestDTO request) {
 		log.info("Received request to create account, number: {}, name: {}",
@@ -53,6 +56,7 @@ public class AccountController {
 	}
 	
 	@ResponseStatus(HttpStatus.NO_CONTENT)
+	@PreAuthorize(Roles.REQUIRES_ACCOUNT_WRITE)
 	@PatchMapping("/{accountNumber}")
 	public void updateAccount(@PathVariable String accountNumber, @Valid @RequestBody UpdateAccountRequestDTO request) {
 		log.info("Received request to rename account number: {}, name: {}", accountNumber, request.accountName());
@@ -60,18 +64,21 @@ public class AccountController {
 	}
 	
 	@ResponseStatus(HttpStatus.NO_CONTENT)
+	@PreAuthorize(Roles.REQUIRES_ACCOUNT_WRITE)
 	@DeleteMapping("/{accountNumber}")
 	public void deleteAccount(@PathVariable String accountNumber) {
 		log.info("Received request to delete account number: {}", accountNumber);
 		service.deleteAccount(accountNumber);
 	}
 	
+	@PreAuthorize(Roles.REQUIRES_ACCOUNT_READ)
 	@GetMapping("/{accountNumber}")
 	public ResponseEntity<AccountResponseDTO> getAccountByNumber(@PathVariable String accountNumber) {
 		log.info("Finding account by number: {}", accountNumber);
 		return ResponseEntity.ok(service.findByNumber(accountNumber));
 	}
 	
+	@PreAuthorize(Roles.REQUIRES_ACCOUNT_READ)
 	@GetMapping
 	public Page<AccountResponseDTO> getAll(@Valid PageableAccountFilterRequestDTO pageableRequest) {
 		log.info("Finding pageable account with size: {}, page: {}, number: {}, name: {}",

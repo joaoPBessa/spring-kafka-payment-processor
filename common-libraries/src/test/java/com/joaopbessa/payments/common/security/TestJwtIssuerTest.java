@@ -38,6 +38,16 @@ class TestJwtIssuerTest {
     }
 
     @Test
+    @DisplayName("Should give the Authorization header value for a token with the roles")
+    void shouldGiveTheAuthorizationHeaderValueForATokenWithTheRoles() {
+        String header = issuer.bearer("DLT_VIEW");
+
+        assertThat(header).startsWith("Bearer ");
+        Jwt jwt = decoder.decode(header.substring("Bearer ".length()));
+        assertThat(jwt.getClaimAsStringList(TokenClaims.ROLES)).containsExactly("DLT_VIEW");
+    }
+
+    @Test
     @DisplayName("Should issue expired tokens that the decoder rejects")
     void shouldIssueExpiredTokensThatTheDecoderRejects() {
         String expired = issuer.expiredToken("ACCOUNT_READ");

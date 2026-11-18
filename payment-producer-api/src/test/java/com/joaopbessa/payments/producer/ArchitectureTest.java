@@ -1,6 +1,7 @@
 package com.joaopbessa.payments.producer;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.methods;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_ACCESS_STANDARD_STREAMS;
 import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_USE_FIELD_INJECTION;
@@ -9,6 +10,7 @@ import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.sli
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
@@ -26,6 +28,7 @@ class ArchitectureTest {
     private static final String CONTROLLERS = BASE + ".controllers..";
     private static final String DOMAIN = BASE + ".domain..";
     private static final String REPOSITORIES = BASE + ".repositories..";
+    private static final String SECURITY = BASE + ".security..";
     private static final String SERVICES = BASE + ".services..";
 
     private static JavaClasses producerClasses;
@@ -80,6 +83,23 @@ class ArchitectureTest {
     void shouldKeepTheRestControllersInTheControllersPackage() {
         classes().that().areAnnotatedWith(RestController.class)
                 .should().resideInAPackage(CONTROLLERS)
+                .check(producerClasses);
+    }
+
+    @Test
+    @DisplayName("Should protect every public controller method with @PreAuthorize")
+    void shouldProtectEveryPublicControllerMethodWithPreAuthorize() {
+        methods().that().areDeclaredInClassesThat().areAnnotatedWith(RestController.class)
+                .and().arePublic()
+                .should().beAnnotatedWith(PreAuthorize.class)
+                .check(producerClasses);
+    }
+
+    @Test
+    @DisplayName("Should keep the domain, the repositories and the services independent of the security package")
+    void shouldKeepTheBusinessLayersIndependentOfTheSecurityPackage() {
+        noClasses().that().resideInAnyPackage(DOMAIN, REPOSITORIES, SERVICES)
+                .should().dependOnClassesThat().resideInAPackage(SECURITY)
                 .check(producerClasses);
     }
 

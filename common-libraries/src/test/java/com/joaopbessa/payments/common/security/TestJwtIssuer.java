@@ -58,6 +58,11 @@ public final class TestJwtIssuer {
         return tokenIssuedAt(Instant.now(), roles);
     }
 
+    /** The value of an {@code Authorization} header that presents a token with the given roles. */
+    public String bearer(String... roles) {
+        return "Bearer " + token(roles);
+    }
+
     public String expiredToken(String... roles) {
         return tokenIssuedAt(Instant.now().minus(Duration.ofHours(1)), roles);
     }
