@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.UUID;
 
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,9 +16,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 import com.joaopbessa.payments.auth.PostgresContainerConfiguration;
+import jakarta.persistence.EntityManagerFactory;
 import com.joaopbessa.payments.auth.domain.entities.AppUser;
 
-@DataJpaTest
+@DataJpaTest(properties = "spring.jpa.properties.hibernate.generate_statistics=true")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ActiveProfiles("test")
 @Import(PostgresContainerConfiguration.class)
@@ -32,6 +35,9 @@ class AppUserRepositoryTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private EntityManagerFactory entityManagerFactory;
 
     private UUID givenUser(String username, boolean enabled, String... roles) {
         UUID id = UUID.randomUUID();
@@ -55,6 +61,19 @@ class AppUserRepositoryTest {
         assertThat(user.isEnabled()).isTrue();
         assertThat(user.getRoles()).containsExactlyInAnyOrder("ACCOUNT_READ", "ACCOUNT_WRITE");
         assertThat(user.getCreatedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Should load a user together with its roles in a single query")
+    void shouldLoadUserAndRolesInASingleQuery() {
+        givenUser("single-query-user", true, "ACCOUNT_READ", "ACCOUNT_WRITE", "PAYMENT_CREATE");
+        Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        statistics.clear();
+
+        AppUser user = appUserRepository.findByUsername("single-query-user").orElseThrow();
+
+        assertThat(user.getRoles()).hasSize(3);
+        assertThat(statistics.getPrepareStatementCount()).isEqualTo(1);
     }
 
     @Test

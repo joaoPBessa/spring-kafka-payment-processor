@@ -8,7 +8,6 @@ import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
@@ -47,7 +46,8 @@ public class AppUser {
 	@Column(name = "CREATED_AT", insertable = false, updatable = false)
 	private Instant createdAt;
 
-	@ElementCollection(fetch = FetchType.EAGER)
+	/** Lazy: a query that needs the roles asks for them (see {@code AppUserRepository#findByUsername}). */
+	@ElementCollection
 	@CollectionTable(name = "APP_USER_ROLE", joinColumns = @JoinColumn(name = "USER_ID"))
 	@Column(name = "ROLE", nullable = false, length = 50)
 	private Set<String> roles;
