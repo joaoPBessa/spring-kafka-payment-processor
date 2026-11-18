@@ -32,7 +32,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.kafka.autoconfigure.KafkaConnectionDetails;
 import org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfigureMetrics;
-import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
@@ -49,6 +48,8 @@ import com.joaopbessa.payments.consumer.dlt.ReplaySummary;
 import com.joaopbessa.payments.common.avro.PaymentEvent;
 import com.joaopbessa.payments.common.avro.PaymentMethod;
 import com.joaopbessa.payments.common.observability.PrometheusText;
+import com.joaopbessa.payments.common.security.CommonRoles;
+import com.joaopbessa.payments.consumer.security.Roles;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -58,7 +59,7 @@ import tools.jackson.databind.json.JsonMapper;
 @AutoConfigureTestRestTemplate
 @ActiveProfiles("test")
 @Import({ PostgresContainerConfiguration.class, ConsumerDatabaseRoleConfiguration.class,
-        KafkaInfrastructureConfiguration.class })
+        KafkaInfrastructureConfiguration.class, BearerRestClientConfiguration.class })
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("Dead letter replay (Kafka + Apicurio + Postgres integration)")
@@ -86,7 +87,7 @@ class DeadLetterReplayIntegrationTest {
     private static long endOffsetBeforeTheJob;
 
     @Autowired
-    private TestRestTemplate restTemplate;
+    private BearerRestClient api;
 
     @Autowired
     private JsonMapper jsonMapper;
@@ -148,7 +149,7 @@ class DeadLetterReplayIntegrationTest {
     }
 
     private JsonNode deadLetters() throws Exception {
-        ResponseEntity<String> response = restTemplate.getForEntity(DEAD_LETTERS_URL, String.class);
+        ResponseEntity<String> response = api.get(DEAD_LETTERS_URL, String.class, Roles.DLT_VIEW);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         return jsonMapper.readTree(response.getBody());
     }
@@ -164,14 +165,14 @@ class DeadLetterReplayIntegrationTest {
     }
 
     private JsonNode replayRequest(List<String> transactionIds) throws Exception {
-        ResponseEntity<String> response = restTemplate.postForEntity(
-                REPLAY_URL, Map.of("transaction_ids", transactionIds), String.class);
+        ResponseEntity<String> response = api.post(
+                REPLAY_URL, Map.of("transaction_ids", transactionIds), String.class, Roles.DLT_REPLAY);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
         return jsonMapper.readTree(response.getBody()).get("results");
     }
 
     private double replays(String trigger, String result) {
-        String scrape = restTemplate.getForObject("/actuator/prometheus", String.class);
+        String scrape = api.get("/actuator/prometheus", String.class, CommonRoles.METRICS_READ).getBody();
         return new PrometheusText(scrape).sum(REPLAYED_METRIC, "trigger=\"" + trigger + "\"",
                 "result=\"" + result + "\"");
     }

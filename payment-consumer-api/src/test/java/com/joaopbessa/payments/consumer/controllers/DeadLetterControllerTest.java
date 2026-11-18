@@ -23,9 +23,18 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+
+import com.joaopbessa.payments.common.security.ResourceServerSecurityAutoConfiguration;
+import com.joaopbessa.payments.common.security.TestJwtIssuer;
+import com.joaopbessa.payments.consumer.TestJwtConfiguration;
+import com.joaopbessa.payments.consumer.security.Roles;
 
 import com.joaopbessa.payments.consumer.api.dto.request.ReplayDeadLettersRequest;
 import com.joaopbessa.payments.consumer.dlt.DeadLetterMessage;
@@ -39,6 +48,7 @@ import com.joaopbessa.payments.common.avro.PaymentMethod;
 
 @WebMvcTest(controllers = DeadLetterController.class, properties = {
         "spring.cloud.vault.enabled=false", "spring.cloud.bootstrap.enabled=false" })
+@Import({ ResourceServerSecurityAutoConfiguration.class, TestJwtConfiguration.class })
 @DisplayName("GET /api/v1/dead-letters")
 class DeadLetterControllerTest {
 
@@ -49,6 +59,15 @@ class DeadLetterControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private TestJwtIssuer issuer;
+
+    // Who may call which endpoint is covered by AccessControlTest; these tests are about the behaviour behind it.
+    private ResultActions performAuthorized(MockHttpServletRequestBuilder request) throws Exception {
+        return mockMvc.perform(request.header(HttpHeaders.AUTHORIZATION,
+                issuer.bearer(Roles.DLT_VIEW, Roles.DLT_REPLAY)));
+    }
 
     @MockitoBean
     private DeadLetterService deadLetterService;
@@ -79,7 +98,7 @@ class DeadLetterControllerTest {
     void shouldReturnTheDecodedEventsWithSnakeCaseFields() throws Exception {
         when(deadLetterService.oldestMessages()).thenReturn(List.of(decodedMessage()));
 
-        mockMvc.perform(get(URL))
+        performAuthorized(get(URL))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.length()").value(1))
@@ -105,7 +124,7 @@ class DeadLetterControllerTest {
     void shouldReturnTheRawTextOfAMessageThatIsNotAValidEvent() throws Exception {
         when(deadLetterService.oldestMessages()).thenReturn(List.of(undecodableMessage()));
 
-        mockMvc.perform(get(URL))
+        performAuthorized(get(URL))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].payload").doesNotExist())
                 .andExpect(jsonPath("$[0].raw_payload").value("this is not an avro payload"));
@@ -116,7 +135,7 @@ class DeadLetterControllerTest {
     void shouldReturnAnEmptyListWhenTheDeadLetterTopicIsEmpty() throws Exception {
         when(deadLetterService.oldestMessages()).thenReturn(List.of());
 
-        mockMvc.perform(get(URL))
+        performAuthorized(get(URL))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
     }
@@ -127,7 +146,7 @@ class DeadLetterControllerTest {
         when(deadLetterService.oldestMessages())
                 .thenThrow(new DeadLetterReadException("Could not read the dead letter topic", new RuntimeException()));
 
-        mockMvc.perform(get(URL))
+        performAuthorized(get(URL))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.status").value(503))
                 .andExpect(jsonPath("$.detail").value("The dead letter topic is unavailable, try again later"));
@@ -139,7 +158,7 @@ class DeadLetterControllerTest {
         when(deadLetterReplayService.replay(List.of("tx-1", "tx-2", "tx-3"))).thenReturn(List.of(
                 ReplayResult.replayed("tx-1", 0, 3), ReplayResult.notFound("tx-2"), ReplayResult.failed("tx-3")));
 
-        mockMvc.perform(post(REPLAY_URL).contentType(MediaType.APPLICATION_JSON)
+        performAuthorized(post(REPLAY_URL).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"transaction_ids\": [\"tx-1\", \"tx-2\", \"tx-3\"]}"))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.results.length()").value(3))
@@ -167,7 +186,7 @@ class DeadLetterControllerTest {
             "not json" })
     @DisplayName("POST replay -> Should answer 400 as a problem detail for an invalid body")
     void shouldAnswer400AsAProblemDetailForAnInvalidBody(String body) throws Exception {
-        mockMvc.perform(post(REPLAY_URL).contentType(MediaType.APPLICATION_JSON).content(body))
+        performAuthorized(post(REPLAY_URL).contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.status").value(400));
@@ -182,7 +201,7 @@ class DeadLetterControllerTest {
                 .mapToObj(index -> "\"tx-" + index + "\"")
                 .collect(Collectors.joining(","));
 
-        mockMvc.perform(post(REPLAY_URL).contentType(MediaType.APPLICATION_JSON)
+        performAuthorized(post(REPLAY_URL).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"transaction_ids\": [" + ids + "]}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400));
@@ -196,7 +215,7 @@ class DeadLetterControllerTest {
         when(deadLetterReplayService.replay(List.of("tx-1")))
                 .thenThrow(new DeadLetterReadException("Could not read the dead letter topic", new RuntimeException()));
 
-        mockMvc.perform(post(REPLAY_URL).contentType(MediaType.APPLICATION_JSON)
+        performAuthorized(post(REPLAY_URL).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"transaction_ids\": [\"tx-1\"]}"))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.status").value(503));

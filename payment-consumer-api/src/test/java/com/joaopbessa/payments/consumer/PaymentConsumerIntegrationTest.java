@@ -53,6 +53,8 @@ import com.joaopbessa.payments.consumer.repositories.PaymentRepository;
 import com.joaopbessa.payments.consumer.services.PaymentPersistenceService;
 import com.joaopbessa.payments.common.avro.PaymentEvent;
 import com.joaopbessa.payments.common.observability.PrometheusText;
+import com.joaopbessa.payments.common.security.CommonRoles;
+import com.joaopbessa.payments.consumer.security.Roles;
 
 import io.micrometer.tracing.Tracer;
 
@@ -62,7 +64,7 @@ import io.micrometer.tracing.Tracer;
 @AutoConfigureTestRestTemplate
 @ActiveProfiles("test")
 @Import({ PostgresContainerConfiguration.class, ConsumerDatabaseRoleConfiguration.class,
-        KafkaInfrastructureConfiguration.class })
+        KafkaInfrastructureConfiguration.class, BearerRestClientConfiguration.class })
 @DisplayName("Payment consumer (Kafka + Apicurio + Postgres integration)")
 class PaymentConsumerIntegrationTest {
 
@@ -95,6 +97,9 @@ class PaymentConsumerIntegrationTest {
 
     @Autowired
     private TestRestTemplate restTemplate;
+
+    @Autowired
+    private BearerRestClient api;
 
     @Autowired
     private Tracer tracer;
@@ -130,7 +135,7 @@ class PaymentConsumerIntegrationTest {
     }
 
     private PrometheusText scrape() {
-        return new PrometheusText(restTemplate.getForObject("/actuator/prometheus", String.class));
+        return new PrometheusText(api.get("/actuator/prometheus", String.class, CommonRoles.METRICS_READ).getBody());
     }
 
     private double counter(String metric, String... labels) {
@@ -209,10 +214,50 @@ class PaymentConsumerIntegrationTest {
     @Test
     @DisplayName("Should expose Prometheus metrics tagged with the application name")
     void shouldExposePrometheusMetricsTaggedWithApplicationName() {
-        ResponseEntity<String> response = restTemplate.getForEntity("/actuator/prometheus", String.class);
+        ResponseEntity<String> response = api.get("/actuator/prometheus", String.class, CommonRoles.METRICS_READ);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).contains("application=\"payment-consumer-api\"");
+    }
+
+    @Test
+    @DisplayName("Should protect the metrics endpoint with the METRICS_READ role")
+    void shouldProtectTheMetricsEndpointWithTheMetricsReadRole() {
+        assertThat(restTemplate.getForEntity("/actuator/prometheus", String.class).getStatusCode())
+                .isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(api.get("/actuator/prometheus", String.class, Roles.DLT_REPLAY).getStatusCode())
+                .isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("Should refuse the dead letter endpoints to a caller without a token")
+    void shouldRefuseTheDeadLetterEndpointsWithoutAToken() {
+        // A read is refused by the missing authentication (401); a write fails the CSRF check first (403).
+        assertThat(restTemplate.getForEntity("/api/v1/dead-letters", String.class).getStatusCode())
+                .isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(restTemplate.postForEntity("/api/v1/dead-letters/replay",
+                Map.of("transaction_ids", List.of("tx-1")), String.class).getStatusCode())
+                .isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("Should let a viewer read the dead letters but not replay them")
+    void shouldLetAViewerReadTheDeadLettersButNotReplayThem() {
+        assertThat(api.get("/api/v1/dead-letters", String.class, Roles.DLT_VIEW).getStatusCode())
+                .isEqualTo(HttpStatus.OK);
+        assertThat(api.post("/api/v1/dead-letters/replay", Map.of("transaction_ids", List.of("tx-1")),
+                String.class, Roles.DLT_VIEW).getStatusCode())
+                .isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("Should let an operator replay: an id that is not in the dead letters is reported as not found")
+    void shouldLetAnOperatorReplay() {
+        ResponseEntity<String> response = api.post("/api/v1/dead-letters/replay",
+                Map.of("transaction_ids", List.of("not-in-the-dlt")), String.class, Roles.DLT_REPLAY);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        assertThat(response.getBody()).contains("not_found");
     }
 
     @Test
