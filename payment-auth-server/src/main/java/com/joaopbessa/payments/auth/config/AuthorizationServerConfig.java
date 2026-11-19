@@ -55,7 +55,8 @@ public class AuthorizationServerConfig {
 	SecurityFilterChain loginSecurityFilterChain(HttpSecurity http) {
 		return http
 				.authorizeHttpRequests(authorize -> authorize
-						.requestMatchers(OpenEndpoints.paths()).permitAll()
+						.requestMatchers(OpenEndpoints.health()).permitAll()
+						.requestMatchers(OpenEndpoints.ERROR_PATH).permitAll()
 						.anyRequest().authenticated())
 				.formLogin(Customizer.withDefaults())
 				.build();
