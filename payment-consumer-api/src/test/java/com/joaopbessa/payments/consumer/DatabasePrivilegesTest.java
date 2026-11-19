@@ -347,7 +347,7 @@ class DatabasePrivilegesTest {
     @DisplayName("Should refuse the authorization server a write to the users")
     void shouldRefuseTheAuthorizationServerAWriteToTheUsers() throws SQLException {
         try (Connection auth = loginAs(AUTH_ROLE, AUTH_PASSWORD)) {
-            assertThatThrownBy(() -> execute(auth, INSERT_USER, "intruder", "{base64}ZGVtbw=="))
+            assertThatThrownBy(() -> execute(auth, INSERT_USER, "intruder", "{bcrypt}intruder-password-hash"))
                     .isInstanceOfSatisfying(SQLException.class,
                             failure -> assertThat(failure.getSQLState()).isEqualTo(PERMISSION_DENIED));
         }

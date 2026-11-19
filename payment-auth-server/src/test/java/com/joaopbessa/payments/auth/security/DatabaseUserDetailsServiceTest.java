@@ -18,6 +18,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 
@@ -29,7 +30,7 @@ import com.joaopbessa.payments.auth.repositories.AppUserRepository;
 class DatabaseUserDetailsServiceTest {
 
     private static final String USERNAME = "producer-client";
-    private static final String STORED_PASSWORD = "{base64}cHJvZHVjZXItY2xpZW50LWRlbW8=";
+    private static final String STORED_PASSWORD = "{bcrypt}" + new BCryptPasswordEncoder().encode("producer-client-demo");
 
     @Mock
     private AppUserRepository appUserRepository;

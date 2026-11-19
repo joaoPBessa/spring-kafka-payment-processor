@@ -36,7 +36,7 @@ public class AppUser {
 	@Column(name = "USERNAME", nullable = false, updatable = false, length = 50)
 	private String username;
 
-	/** The stored value, prefixed with the id of the encoding that produced it (for example {@code {base64}...}). */
+	/** The stored value, prefixed with the id of the encoding that produced it (for example {@code {bcrypt}...}). */
 	@Column(name = "PASSWORD", nullable = false, length = 200)
 	private String password;
 

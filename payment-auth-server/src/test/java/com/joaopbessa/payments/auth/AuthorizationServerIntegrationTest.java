@@ -28,6 +28,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockHttpSession;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.test.context.ActiveProfiles;
@@ -66,8 +67,6 @@ class AuthorizationServerIntegrationTest {
 
     private static final String DISABLED_USER = "disabled-demo-user";
     private static final String DISABLED_USER_PASSWORD = "disabled-demo-user-demo";
-    private static final String BASE64_OF_DISABLED_USER_PASSWORD = "{base64}"
-            + Base64.getEncoder().encodeToString(DISABLED_USER_PASSWORD.getBytes(StandardCharsets.UTF_8));
 
     @Autowired
     private MockMvc mockMvc;
@@ -80,6 +79,9 @@ class AuthorizationServerIntegrationTest {
 
     @Autowired
     private JdbcTemplate adminJdbcTemplate;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     @AfterEach
     void removeFixtures() {
@@ -298,7 +300,7 @@ class AuthorizationServerIntegrationTest {
     @DisplayName("Should keep a disabled user on the login page even with the right password")
     void shouldRejectDisabledUser() throws Exception {
         adminJdbcTemplate.update("INSERT INTO app_user (id, username, password, enabled) VALUES (?, ?, ?, FALSE)",
-                UUID.randomUUID(), DISABLED_USER, BASE64_OF_DISABLED_USER_PASSWORD);
+                UUID.randomUUID(), DISABLED_USER, passwordEncoder.encode(DISABLED_USER_PASSWORD));
 
         MockHttpServletResponse response = signIn(DISABLED_USER, DISABLED_USER_PASSWORD, Pkce.generate());
 
@@ -354,7 +356,7 @@ class AuthorizationServerIntegrationTest {
         assertThat(applicationJdbc.queryForObject("SELECT current_user", String.class)).isEqualTo("payment-auth-app");
         assertThatThrownBy(() -> applicationJdbc.update(
                 "INSERT INTO app_user (id, username, password) VALUES (?, ?, ?)",
-                UUID.randomUUID(), "intruder", "{base64}c2VjcmV0"))
+                UUID.randomUUID(), "intruder", "{bcrypt}intruder-password-hash"))
                 .isInstanceOf(DataAccessException.class)
                 .rootCause().hasMessageContaining("permission denied for table app_user");
     }

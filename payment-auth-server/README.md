@@ -18,7 +18,7 @@ An access token is a signed JWT (RS256) that lives **15 minutes**; there is no r
 
 ## Users and roles
 
-Users live in `APP_USER` and `APP_USER_ROLE` (Flyway `V5`). `V6` seeds four demonstration users; the password of each is `<username>-demo`.
+Users live in `APP_USER` and `APP_USER_ROLE` (Flyway `V5`). `V6` seeds four demonstration users (and `V7` hashes their passwords); the password of each is `<username>-demo`.
 
 | User | Roles | Meant for |
 |---|---|---|
@@ -27,7 +27,9 @@ Users live in `APP_USER` and `APP_USER_ROLE` (Flyway `V5`). `V6` seeds four demo
 | `dlt-operator` | `DLT_VIEW`, `DLT_REPLAY` | Looking at and replaying the dead letters |
 | `dlt-viewer` | `DLT_VIEW` | Looking at the dead letters only |
 
-> **The stored passwords are Base64, which is an encoding, not a hash.** Anyone who can read the table can read the passwords. It is a deliberate stand-in for the example (`Base64PasswordEncoder` in `common-libraries` says so in its Javadoc). Values are stored as `{base64}...` behind a `DelegatingPasswordEncoder`, so a real hash such as `{bcrypt}` can be added under its own id and used for new passwords without migrating the existing ones.
+> **Passwords are stored as bcrypt hashes** (cost 10, a salt per password), as `{bcrypt}$2a$10$...` behind a `DelegatingPasswordEncoder` from `common-libraries`. The passwords of the demonstration users are still public (`<username>-demo`): they are for demonstration only. `V6` seeded them Base64-encoded, which is an encoding and not a hash, and `V7` rewrote them as hashes; `V6` is kept as it was because Flyway checksums the migrations already applied. A stored value with an id the encoder does not know (including the old `{base64}`) never matches.
+>
+> The encoder keeps the algorithm in each stored value, so another algorithm or a higher cost can be added under a new id without breaking the existing values. This module connects as a read-only database role, so it never re-hashes a password at login: moving the existing values to a new algorithm takes a migration, as `V7` did. There is no user provisioning or password change yet.
 
 ## Getting a token
 
