@@ -6,13 +6,13 @@ Static map of the repository, drawn on branch `feat/dlt-replay` and refreshed af
 
 | Module | Kind | Main classes (lines) | Test classes (lines) | Responsibility |
 |---|---|---|---|---|
-| `common-libraries` | jar | 9 (333) | 11 (848) | `PaymentMethod` enum, `PaymentEvent.avsc` (Avro schema → generated `PaymentEvent`), `ActuatorObservationPredicate`, the shared security building blocks (`PasswordEncoderAutoConfiguration` with bcrypt, `ResourceServerSecurityAutoConfiguration`, `TokenValidationFailureHandler` (503 when the issuer's keys cannot be fetched), `TokenClaims`, `CommonRoles`, `OpenEndpoints`), test helpers `PrometheusText` and `TestJwtIssuer` (test-jar) |
+| `common-libraries` | jar | 9 (351) | 11 (937) | `PaymentMethod` enum, `PaymentEvent.avsc` (Avro schema → generated `PaymentEvent`), `ActuatorObservationPredicate`, the shared security building blocks (`PasswordEncoderAutoConfiguration` with bcrypt, `ResourceServerSecurityAutoConfiguration`, `TokenValidationFailureHandler` (503 when the issuer's keys cannot be fetched), `TokenClaims`, `CommonRoles`, `OpenEndpoints`; the Actuator rules match the endpoints by id), test helpers `PrometheusText` and `TestJwtIssuer` (test-jar) |
 | `payment-db-migration` | jar (SQL only) | – | – | Flyway migrations V1–V7 (accounts, payments, application users, their seed and the bcrypt rehash of its passwords); applied by the `db-migrate` compose service, test dependency of the consumer and the auth server |
 | `payment-producer-api` | Spring Boot, :8081 | 27 (932) | 18 (2,077) | Account REST API (JPA + Redis cache) and the payment endpoint that publishes Avro events to Kafka |
 | `payment-consumer-api` | Spring Boot, :8082 | 37 (1,374) | 37 (4,555) | Consumes `payment.events`, persists payments, dead-letters failures, exposes the DLT view and replay |
-| `payment-auth-server` | Spring Boot, :9000 | 7 (335) | 11 (1,165) | OAuth2 authorization server: users from the database, authorization code + PKCE for people, client credentials for services, JWT with a `roles` claim |
+| `payment-auth-server` | Spring Boot, :9000 | 7 (336) | 11 (1,165) | OAuth2 authorization server: users from the database, authorization code + PKCE for people, client credentials for services, JWT with a `roles` claim |
 
-Totals: 218 tracked files, 80 main + 77 test Java classes (2,974 / 8,645 lines). Infrastructure lives in `docker-compose.yml`, `scripts/` (Postgres roles, Vault seed) and `monitoring/` (Prometheus, Grafana dashboards).
+Totals: 218 tracked files, 80 main + 77 test Java classes (2,993 / 8,734 lines). Infrastructure lives in `docker-compose.yml`, `scripts/` (Postgres roles, Vault seed) and `monitoring/` (Prometheus, Grafana dashboards).
 
 ## 2. Runtime architecture
 
