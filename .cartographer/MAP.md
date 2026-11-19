@@ -12,7 +12,7 @@ Static map of the repository, drawn on branch `feat/dlt-replay` and refreshed af
 | `payment-consumer-api` | Spring Boot, :8082 | 37 (1,374) | 37 (4,555) | Consumes `payment.events`, persists payments, dead-letters failures, exposes the DLT view and replay |
 | `payment-auth-server` | Spring Boot, :9000 | 7 (335) | 11 (1,165) | OAuth2 authorization server: users from the database, authorization code + PKCE for people, client credentials for services, JWT with a `roles` claim |
 
-Totals: 218 tracked files, 80 main + 77 test Java classes (2,974 / 8,645 lines). Infrastructure lives in `docker-compose.yml`, `scripts/` (Postgres roles, Vault seed) and `monitoring/` (Prometheus, Grafana dashboards).
+Totals: 219 tracked files, 80 main + 78 test Java classes (2,995 / 8,762 lines). Infrastructure lives in `docker-compose.yml`, `scripts/` (Postgres roles, Vault seed) and `monitoring/` (Prometheus, Grafana dashboards).
 
 ## 2. Runtime architecture
 
@@ -238,7 +238,7 @@ flowchart TD
 | `domain.entities` | `Account` |
 | `api.dto.request` | `CreateAccountRequestDTO`, `UpdateAccountRequestDTO`, `PageableAccountFilterRequestDTO`, `PaymentRequestDTO` |
 | `api.dto.response` | `AccountResponseDTO`, `PaymentResponseDTO`, `ErrorResponse` |
-| `exceptions` | `GlobalExceptionHandler` (also maps `AccessDeniedException` to 403), `AccountNotFoundException`, `DuplicatedAccountException`, `PaymentPublishException` |
+| `exceptions` | `GlobalExceptionHandler` (also maps `AccessDeniedException` to 403, and lets the client errors of Spring MVC keep their status: 404, 405, 415), `AccountNotFoundException`, `DuplicatedAccountException`, `PaymentPublishException` |
 | `security` | `Roles` (`ACCOUNT_READ`, `ACCOUNT_WRITE`, `PAYMENT_CREATE` and the `@PreAuthorize` expressions used by the controllers) |
 | `config` | `KafkaProducerConfig`, `KafkaProducerProperties`, `RedisCacheConfig`, `JPAConfiguration` |
 | `metrics` | `PaymentMetrics`, `PublishOutcome` |
