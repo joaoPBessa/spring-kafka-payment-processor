@@ -5,6 +5,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication.Type;
+import org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -23,8 +24,12 @@ import org.springframework.security.web.SecurityFilterChain;
  * <ul>
  * <li>Authorization of each endpoint is declared with {@code @PreAuthorize} on the controller methods; the roles come
  * from the {@link TokenClaims#ROLES} claim, mapped to {@code ROLE_*} authorities.</li>
- * <li>{@code /actuator/health} and {@code /error} are open; {@code /actuator/prometheus} requires
- * {@link CommonRoles#METRICS_READ}; every other request must be authenticated.</li>
+ * <li>The health endpoint and {@code /error} are open; the prometheus endpoint requires
+ * {@link CommonRoles#METRICS_READ}; every other request must be authenticated. The Actuator endpoints are matched by
+ * id, so they follow {@code management.endpoints.web.base-path} and {@code path-mapping}. This needs Spring Boot
+ * Actuator in the application, as all three applications of the platform have; in a context without the Actuator
+ * endpoints (a controller slice test) those paths fall under the authenticated rule. A separate management port is
+ * not covered.</li>
  * <li>No session is created. CSRF protection stays on; Spring Security exempts requests that carry a Bearer token,
  * because browsers do not send those on their own.</li>
  * <li>A token that is invalid, expired or from another issuer is answered with {@code 401}; one that cannot be checked
@@ -45,12 +50,15 @@ import org.springframework.security.web.SecurityFilterChain;
 @EnableMethodSecurity
 public class ResourceServerSecurityAutoConfiguration {
 
+    private static final String PROMETHEUS_ENDPOINT_ID = "prometheus";
+
     @Bean
     SecurityFilterChain resourceServerSecurityFilterChain(HttpSecurity http) {
         return http
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers(OpenEndpoints.paths()).permitAll()
-                        .requestMatchers("/actuator/prometheus").hasRole(CommonRoles.METRICS_READ)
+                        .requestMatchers(OpenEndpoints.health()).permitAll()
+                        .requestMatchers(OpenEndpoints.ERROR_PATH).permitAll()
+                        .requestMatchers(EndpointRequest.to(PROMETHEUS_ENDPOINT_ID)).hasRole(CommonRoles.METRICS_READ)
                         .anyRequest().authenticated())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .oauth2ResourceServer(oauth2 -> oauth2

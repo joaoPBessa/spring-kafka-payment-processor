@@ -13,6 +13,11 @@ import java.net.ServerSocket;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.actuate.autoconfigure.endpoint.EndpointAutoConfiguration;
+import org.springframework.boot.actuate.autoconfigure.endpoint.web.WebEndpointAutoConfiguration;
+import org.springframework.boot.actuate.endpoint.annotation.ReadOperation;
+import org.springframework.boot.actuate.endpoint.annotation.Selector;
+import org.springframework.boot.actuate.endpoint.web.annotation.WebEndpoint;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.context.annotation.ImportCandidates;
@@ -41,12 +46,20 @@ class ResourceServerSecurityAutoConfigurationTest {
 
     private static final String REPORTER_ROLE = "REPORTER";
 
+    private static final String BASE_PATH = "${management.endpoints.web.base-path:/actuator}";
+
     private final TestJwtIssuer issuer = new TestJwtIssuer();
 
     private final WebApplicationContextRunner runner = new WebApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(ResourceServerSecurityAutoConfiguration.class))
             .withUserConfiguration(WebConfiguration.class)
             .withBean(JwtDecoder.class, issuer::decoder);
+
+    /** The same application with the Actuator endpoint registry, which is what maps the endpoint ids to paths. */
+    private final WebApplicationContextRunner actuatorRunner = runner
+            .withConfiguration(AutoConfigurations.of(EndpointAutoConfiguration.class, WebEndpointAutoConfiguration.class))
+            .withUserConfiguration(OperationalEndpoints.class)
+            .withPropertyValues("management.endpoints.web.exposure.include=health,prometheus");
 
     private void withMockMvc(MockMvcAssertions assertions) {
         withMockMvc(runner, assertions);
@@ -184,25 +197,58 @@ class ResourceServerSecurityAutoConfigurationTest {
     }
 
     @Test
-    @DisplayName("Should leave the health endpoints and the error path open")
-    void shouldLeaveTheHealthEndpointsAndTheErrorPathOpen() {
-        withMockMvc(mockMvc -> {
+    @DisplayName("Should leave the error path open")
+    void shouldLeaveTheErrorPathOpen() {
+        withMockMvc(mockMvc -> mockMvc.perform(get("/error")).andExpect(status().isOk()));
+    }
+
+    @Test
+    @DisplayName("Should leave the health endpoints open")
+    void shouldLeaveTheHealthEndpointsOpen() {
+        withMockMvc(actuatorRunner, mockMvc -> {
             mockMvc.perform(get("/actuator/health")).andExpect(status().isOk());
             mockMvc.perform(get("/actuator/health/liveness")).andExpect(status().isOk());
-            mockMvc.perform(get("/error")).andExpect(status().isOk());
         });
     }
 
     @Test
     @DisplayName("Should require the metrics role on the prometheus endpoint")
     void shouldRequireTheMetricsRoleOnThePrometheusEndpoint() {
+        withMockMvc(actuatorRunner, mockMvc -> assertPrometheusRequiresTheMetricsRole(mockMvc, "/actuator/prometheus"));
+    }
+
+    @Test
+    @DisplayName("Should keep the Actuator rules when the base path of the endpoints changes")
+    void shouldKeepTheActuatorRulesWhenTheBasePathOfTheEndpointsChanges() {
+        withMockMvc(actuatorRunner.withPropertyValues("management.endpoints.web.base-path=/manage"), mockMvc -> {
+            assertPrometheusRequiresTheMetricsRole(mockMvc, "/manage/prometheus");
+            mockMvc.perform(get("/manage/health")).andExpect(status().isOk());
+            mockMvc.perform(get("/manage/health/liveness")).andExpect(status().isOk());
+        });
+    }
+
+    @Test
+    @DisplayName("Should keep the metrics rule when the prometheus endpoint is mapped to another path")
+    void shouldKeepTheMetricsRuleWhenThePrometheusEndpointIsMappedToAnotherPath() {
+        withMockMvc(actuatorRunner.withPropertyValues("management.endpoints.web.path-mapping.prometheus=metrics"),
+                mockMvc -> assertPrometheusRequiresTheMetricsRole(mockMvc, "/actuator/metrics"));
+    }
+
+    @Test
+    @DisplayName("Should require authentication on the Actuator paths when the application has no Actuator")
+    void shouldRequireAuthenticationOnTheActuatorPathsWhenTheApplicationHasNoActuator() {
         withMockMvc(mockMvc -> {
+            mockMvc.perform(get("/actuator/health")).andExpect(status().isUnauthorized());
             mockMvc.perform(get("/actuator/prometheus")).andExpect(status().isUnauthorized());
             mockMvc.perform(bearer(get("/actuator/prometheus"), issuer.token(REPORTER_ROLE)))
-                    .andExpect(status().isForbidden());
-            mockMvc.perform(bearer(get("/actuator/prometheus"), issuer.token(CommonRoles.METRICS_READ)))
                     .andExpect(status().isOk());
         });
+    }
+
+    private void assertPrometheusRequiresTheMetricsRole(MockMvc mockMvc, String path) throws Exception {
+        mockMvc.perform(get(path)).andExpect(status().isUnauthorized());
+        mockMvc.perform(bearer(get(path), issuer.token(REPORTER_ROLE))).andExpect(status().isForbidden());
+        mockMvc.perform(bearer(get(path), issuer.token(CommonRoles.METRICS_READ))).andExpect(status().isOk());
     }
 
     @Test
@@ -248,6 +294,47 @@ class ResourceServerSecurityAutoConfigurationTest {
 
     }
 
+    /** Stand-ins for the health and prometheus endpoints: they register the ids the security rules refer to. */
+    @Configuration(proxyBeanMethods = false)
+    static class OperationalEndpoints {
+
+        @Bean
+        HealthEndpoint healthEndpoint() {
+            return new HealthEndpoint();
+        }
+
+        @Bean
+        PrometheusEndpoint prometheusEndpoint() {
+            return new PrometheusEndpoint();
+        }
+
+    }
+
+    @WebEndpoint(id = "health")
+    static class HealthEndpoint {
+
+        @ReadOperation
+        String health() {
+            return "ok";
+        }
+
+        @ReadOperation
+        String component(@Selector String name) {
+            return name;
+        }
+
+    }
+
+    @WebEndpoint(id = "prometheus")
+    static class PrometheusEndpoint {
+
+        @ReadOperation
+        String scrape() {
+            return "ok";
+        }
+
+    }
+
     @Configuration(proxyBeanMethods = false)
     @EnableWebSecurity
     static class CustomChainConfiguration {
@@ -279,7 +366,9 @@ class ResourceServerSecurityAutoConfigurationTest {
             return "authenticated";
         }
 
-        @GetMapping({ "/actuator/health", "/actuator/health/liveness", "/error", "/actuator/prometheus" })
+        /** Serves the operational paths the way the Actuator would, wherever the application moves them. */
+        @GetMapping({ BASE_PATH + "/health", BASE_PATH + "/health/liveness", "/error", BASE_PATH + "/prometheus",
+                BASE_PATH + "/metrics" })
         String operational() {
             return "ok";
         }
