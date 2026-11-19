@@ -3,9 +3,7 @@ package com.joaopbessa.payments.consumer;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
-import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 
@@ -20,6 +18,7 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.util.stream.Stream;
@@ -28,7 +27,7 @@ import java.util.stream.Stream;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ActiveProfiles("test")
 @Import(PostgresContainerConfiguration.class)
-@DisplayName("V5 and V6 application user migrations")
+@DisplayName("V5, V6 and V7 application user migrations")
 class AppUserTablesMigrationTest {
 
     private static final String INSERT_USER = "INSERT INTO app_user (id, username, password) VALUES (?, ?, ?)";
@@ -42,8 +41,9 @@ class AppUserTablesMigrationTest {
             """;
     private static final String COUNT_ROLES_OF_USER = "SELECT count(*) FROM app_user_role WHERE user_id = ?";
 
-    private static final String ENCODED_PASSWORD = "{base64}ZGVtbw==";
-    private static final String BASE64_ID_PREFIX = "{base64}";
+    private static final String BCRYPT_ID_PREFIX = "{bcrypt}";
+    private static final BCryptPasswordEncoder BCRYPT = new BCryptPasswordEncoder();
+    private static final String ENCODED_PASSWORD = BCRYPT_ID_PREFIX + BCRYPT.encode("demo");
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -60,11 +60,6 @@ class AppUserTablesMigrationTest {
                 Arguments.of("producer-reader", List.of("ACCOUNT_READ")),
                 Arguments.of("dlt-operator", List.of("DLT_REPLAY", "DLT_VIEW")),
                 Arguments.of("dlt-viewer", List.of("DLT_VIEW")));
-    }
-
-    private static String encodedDemoPassword(String username) {
-        String rawPassword = username + "-demo";
-        return BASE64_ID_PREFIX + Base64.getEncoder().encodeToString(rawPassword.getBytes(StandardCharsets.UTF_8));
     }
 
     @Test
@@ -119,11 +114,13 @@ class AppUserTablesMigrationTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("demoUsers")
-    @DisplayName("Should seed the demo user with its roles and an encoded password")
-    void shouldSeedTheDemoUserWithItsRolesAndAnEncodedPassword(String username, List<String> roles) {
+    @DisplayName("Should seed the demo user with its roles and a bcrypt hash of its documented password")
+    void shouldSeedTheDemoUserWithItsRolesAndABcryptHashOfItsDocumentedPassword(String username, List<String> roles) {
+        String stored = jdbcTemplate.queryForObject(SELECT_PASSWORD, String.class, username);
+
         assertThat(jdbcTemplate.queryForObject(SELECT_ENABLED, Boolean.class, username)).isTrue();
-        assertThat(jdbcTemplate.queryForObject(SELECT_PASSWORD, String.class, username))
-                .isEqualTo(encodedDemoPassword(username));
+        assertThat(stored).startsWith(BCRYPT_ID_PREFIX);
+        assertThat(BCRYPT.matches(username + "-demo", stored.substring(BCRYPT_ID_PREFIX.length()))).isTrue();
         assertThat(jdbcTemplate.queryForList(SELECT_ROLES, String.class, username)).containsExactlyElementsOf(roles);
     }
 

@@ -8,14 +8,20 @@ import org.hibernate.SessionFactory;
 import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 
 import com.joaopbessa.payments.auth.PostgresContainerConfiguration;
+import com.joaopbessa.payments.common.security.PasswordEncoderAutoConfiguration;
 import jakarta.persistence.EntityManagerFactory;
 import com.joaopbessa.payments.auth.domain.entities.AppUser;
 
@@ -23,15 +29,19 @@ import com.joaopbessa.payments.auth.domain.entities.AppUser;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ActiveProfiles("test")
 @Import(PostgresContainerConfiguration.class)
+@ImportAutoConfiguration(PasswordEncoderAutoConfiguration.class)
 @DisplayName("AppUserRepository")
 class AppUserRepositoryTest {
 
     private static final String INSERT_USER = "INSERT INTO app_user (id, username, password, enabled) VALUES (?, ?, ?, ?)";
     private static final String INSERT_ROLE = "INSERT INTO app_user_role (user_id, role) VALUES (?, ?)";
-    private static final String STORED_PASSWORD = "{base64}c2VjcmV0";
+    private static final String STORED_PASSWORD = "{bcrypt}" + new BCryptPasswordEncoder().encode("secret");
 
     @Autowired
     private AppUserRepository appUserRepository;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -107,8 +117,17 @@ class AppUserRepositoryTest {
     void shouldFindSeededDemonstrationUsers() {
         AppUser operator = appUserRepository.findByUsername("dlt-operator").orElseThrow();
 
-        assertThat(operator.getPassword()).startsWith("{base64}");
         assertThat(operator.getRoles()).containsExactlyInAnyOrder("DLT_VIEW", "DLT_REPLAY");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = { "producer-client", "producer-reader", "dlt-operator", "dlt-viewer" })
+    @DisplayName("Should store the password of a demonstration user as a bcrypt hash that matches its documented password")
+    void shouldStoreDemonstrationPasswordsAsBcryptHashesThatMatchTheDocumentedOnes(String username) {
+        AppUser user = appUserRepository.findByUsername(username).orElseThrow();
+
+        assertThat(user.getPassword()).startsWith("{bcrypt}");
+        assertThat(passwordEncoder.matches(username + "-demo", user.getPassword())).isTrue();
     }
 
 }

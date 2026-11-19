@@ -21,15 +21,28 @@ class PasswordEncoderAutoConfigurationTest {
             .withConfiguration(AutoConfigurations.of(PasswordEncoderAutoConfiguration.class));
 
     @Test
-    @DisplayName("Should store new passwords with the base64 id prefix")
-    void shouldStoreNewPasswordsWithTheBase64IdPrefix() {
-        runner.run(context -> assertThat(context.getBean(PasswordEncoder.class).encode(RAW_PASSWORD))
-                .isEqualTo("{base64}" + new Base64PasswordEncoder().encode(RAW_PASSWORD)));
+    @DisplayName("Should store new passwords as a bcrypt hash with the bcrypt id prefix, never as the password")
+    void shouldStoreNewPasswordsAsABcryptHashWithTheBcryptIdPrefix() {
+        runner.run(context -> {
+            String stored = context.getBean(PasswordEncoder.class).encode(RAW_PASSWORD);
+
+            assertThat(stored).startsWith("{bcrypt}$2").doesNotContain(RAW_PASSWORD);
+        });
     }
 
     @Test
-    @DisplayName("Should match the raw password against a stored value with the base64 id prefix")
-    void shouldMatchTheRawPasswordAgainstAStoredValueWithTheBase64IdPrefix() {
+    @DisplayName("Should salt every hash, so the same password is stored differently each time")
+    void shouldSaltEveryHash() {
+        runner.run(context -> {
+            PasswordEncoder encoder = context.getBean(PasswordEncoder.class);
+
+            assertThat(encoder.encode(RAW_PASSWORD)).isNotEqualTo(encoder.encode(RAW_PASSWORD));
+        });
+    }
+
+    @Test
+    @DisplayName("Should match the raw password against a stored bcrypt value, and only that password")
+    void shouldMatchTheRawPasswordAgainstAStoredBcryptValue() {
         runner.run(context -> {
             PasswordEncoder encoder = context.getBean(PasswordEncoder.class);
 
@@ -39,10 +52,31 @@ class PasswordEncoderAutoConfigurationTest {
     }
 
     @Test
+    @DisplayName("Should match a bcrypt hash that was made outside the application")
+    void shouldMatchABcryptHashThatWasMadeOutsideTheApplication() {
+        String hashFromElsewhere = "{bcrypt}" + new BCryptPasswordEncoder().encode(RAW_PASSWORD);
+
+        runner.run(context -> assertThat(context.getBean(PasswordEncoder.class).matches(RAW_PASSWORD, hashFromElsewhere))
+                .isTrue());
+    }
+
+    @Test
+    @DisplayName("Should never match a value stored with the removed base64 id or with an unknown id")
+    void shouldNeverMatchAValueStoredWithTheRemovedBase64IdOrWithAnUnknownId() {
+        runner.run(context -> {
+            PasswordEncoder encoder = context.getBean(PasswordEncoder.class);
+
+            assertThat(encoder.matches(RAW_PASSWORD, "{base64}ZGVtby1wYXNzd29yZA==")).isFalse();
+            assertThat(encoder.matches(RAW_PASSWORD, "{unknown}whatever")).isFalse();
+        });
+    }
+
+    @Test
     @DisplayName("Should not match a stored value that has no id prefix")
     void shouldNotMatchAStoredValueThatHasNoIdPrefix() {
-        runner.run(context -> assertThat(
-                context.getBean(PasswordEncoder.class).matches(RAW_PASSWORD, new Base64PasswordEncoder().encode(RAW_PASSWORD)))
+        String hashWithoutPrefix = new BCryptPasswordEncoder().encode(RAW_PASSWORD);
+
+        runner.run(context -> assertThat(context.getBean(PasswordEncoder.class).matches(RAW_PASSWORD, hashWithoutPrefix))
                 .isFalse());
     }
 
