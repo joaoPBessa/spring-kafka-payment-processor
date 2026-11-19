@@ -95,7 +95,7 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/v1/accounts?pa
 | No token on a request that changes state | `403`: CSRF protection is on, and a request without a Bearer token fails that check before authentication. With a Bearer header the request is exempt, because browsers do not send it on their own. |
 | A valid token without the required role | `403` in the usual error format |
 
-The authorization is evaluated after the arguments are bound and validated, so a caller without the role who sends an invalid request gets the `400` validation error rather than a `403`. The authorization server does not have to be up for the application to start, and the health check keeps answering. But while the application has no signing key and cannot fetch one, a request that carries a token fails with a `500` (a request without a token still gets `401`); once a key is cached, short outages of the issuer go unnoticed. Because the issuer's key is generated at startup, restarting the authorization server invalidates the tokens issued before it.
+The authorization is evaluated after the arguments are bound and validated, so a caller without the role who sends an invalid request gets the `400` validation error rather than a `403`. The authorization server does not have to be up for the application to start, and the health check keeps answering. But while the application has no signing key and cannot fetch one, a request that carries a token is answered with `503`, without a body (a request without a token still gets `401`); once a key is cached, short outages of the issuer go unnoticed. Because the issuer's key is generated at startup, restarting the authorization server invalidates the tokens issued before it.
 
 ## API Endpoints
 

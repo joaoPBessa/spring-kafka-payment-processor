@@ -80,7 +80,7 @@ curl -H "Authorization: Bearer $TOKEN" localhost:8082/api/v1/dead-letters
 | No token on a request that changes state | `403`: CSRF protection is on, and a request without a Bearer token fails that check before authentication. With a Bearer header the request is exempt, because browsers do not send it on their own. |
 | A valid token without the required role | `403` as a problem detail |
 
-The authorization server does not have to be up for the application to start, and the health check keeps answering. But while the application has no signing key and cannot fetch one, a request that carries a token fails with a `500` (a request without a token still gets `401`); once a key is cached, short outages of the issuer go unnoticed. Because the issuer's key is generated at startup, restarting the authorization server invalidates the tokens issued before it. The Kafka consumer itself does not use the tokens: only the HTTP endpoints are protected.
+The authorization server does not have to be up for the application to start, and the health check keeps answering. But while the application has no signing key and cannot fetch one, a request that carries a token is answered with `503`, without a body (a request without a token still gets `401`); once a key is cached, short outages of the issuer go unnoticed. Because the issuer's key is generated at startup, restarting the authorization server invalidates the tokens issued before it. The Kafka consumer itself does not use the tokens: only the HTTP endpoints are protected.
 
 ## Inspecting the DLT
 

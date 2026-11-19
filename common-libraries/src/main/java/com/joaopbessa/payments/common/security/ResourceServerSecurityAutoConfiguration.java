@@ -6,6 +6,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication.Type;
 import org.springframework.context.annotation.Bean;
+import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -26,6 +27,9 @@ import org.springframework.security.web.SecurityFilterChain;
  * {@link CommonRoles#METRICS_READ}; every other request must be authenticated.</li>
  * <li>No session is created. CSRF protection stays on; Spring Security exempts requests that carry a Bearer token,
  * because browsers do not send those on their own.</li>
+ * <li>A token that is invalid, expired or from another issuer is answered with {@code 401}; one that cannot be checked
+ * because the signing keys of the issuer cannot be fetched is answered with {@code 503} (see
+ * {@link TokenValidationFailureHandler}).</li>
  * </ul>
  *
  * Backs off when the application declares its own {@link SecurityFilterChain}.
@@ -50,8 +54,26 @@ public class ResourceServerSecurityAutoConfiguration {
                         .anyRequest().authenticated())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .oauth2ResourceServer(oauth2 -> oauth2
-                        .jwt(jwt -> jwt.jwtAuthenticationConverter(rolesClaimConverter())))
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(rolesClaimConverter()))
+                        .withObjectPostProcessor(new TokenValidationFailureHandlerInstaller()))
                 .build();
+    }
+
+    /**
+     * The configurer has no setting for the failure handler of the {@link BearerTokenAuthenticationFilter}, but it
+     * post-processes the filter it creates, and that is where {@link TokenValidationFailureHandler} is installed.
+     * Every object the configurer builds goes through here, hence the type check.
+     */
+    private static final class TokenValidationFailureHandlerInstaller implements ObjectPostProcessor<Object> {
+
+        @Override
+        public <O> O postProcess(O object) {
+            if (object instanceof BearerTokenAuthenticationFilter filter) {
+                filter.setAuthenticationFailureHandler(new TokenValidationFailureHandler());
+            }
+            return object;
+        }
+
     }
 
     private static JwtAuthenticationConverter rolesClaimConverter() {
