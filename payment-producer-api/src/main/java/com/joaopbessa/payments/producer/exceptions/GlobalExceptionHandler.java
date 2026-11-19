@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
@@ -64,6 +65,9 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleAllExceptions(Exception ex) {
+        if (ex instanceof org.springframework.web.ErrorResponse mvcError && mvcError.getStatusCode().is4xxClientError()) {
+            return handleClientErrorOfSpringMvc(mvcError);
+        }
         log.error("Unhandled exception while processing request", ex);
         ErrorResponse response = new ErrorResponse(
                 LocalDateTime.now(),
@@ -73,7 +77,24 @@ public class GlobalExceptionHandler {
         );
         return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
     }
-	
+
+	/**
+	 * Spring MVC raises its own exceptions for the requests it cannot route or read (no such path, a method or media
+	 * type the endpoint does not support, a missing parameter), and each one already carries the status it means
+	 * (404, 405, 415, 400) and the headers it needs (such as {@code Allow}). They are the client's mistake, not an
+	 * unexpected failure, so they keep that status and are not logged as errors.
+	 */
+	private ResponseEntity<ErrorResponse> handleClientErrorOfSpringMvc(org.springframework.web.ErrorResponse mvcError) {
+        ProblemDetail problem = mvcError.getBody();
+        ErrorResponse response = new ErrorResponse(
+                LocalDateTime.now(),
+                problem.getStatus(),
+                problem.getDetail() != null ? problem.getDetail() : problem.getTitle(),
+                null
+        );
+        return ResponseEntity.status(mvcError.getStatusCode()).headers(mvcError.getHeaders()).body(response);
+    }
+
 	@ExceptionHandler(AccountNotFoundException.class)
 	public ResponseEntity<ErrorResponse> handleNotFoundException(Exception ex) {
         ErrorResponse response = new ErrorResponse(
