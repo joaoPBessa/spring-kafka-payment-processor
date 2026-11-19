@@ -8,6 +8,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.io.IOException;
+import java.net.ServerSocket;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -20,6 +23,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.test.web.servlet.MockMvc;
@@ -45,7 +49,11 @@ class ResourceServerSecurityAutoConfigurationTest {
             .withBean(JwtDecoder.class, issuer::decoder);
 
     private void withMockMvc(MockMvcAssertions assertions) {
-        runner.run(context -> {
+        withMockMvc(runner, assertions);
+    }
+
+    private void withMockMvc(WebApplicationContextRunner contextRunner, MockMvcAssertions assertions) {
+        contextRunner.run(context -> {
             assertThat(context).hasNotFailed();
             MockMvc mockMvc = MockMvcBuilders.webAppContextSetup((WebApplicationContext) context.getSourceApplicationContext())
                     .apply(springSecurity()).build();
@@ -55,6 +63,21 @@ class ResourceServerSecurityAutoConfigurationTest {
 
     private static MockHttpServletRequestBuilder bearer(MockHttpServletRequestBuilder request, String token) {
         return request.header(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+    }
+
+    /** A real decoder whose signing keys cannot be fetched: its JWKS endpoint is a local port that nobody listens on. */
+    private WebApplicationContextRunner runnerWithUnreachableSigningKeys() throws IOException {
+        String jwkSetUri = "http://127.0.0.1:%d/oauth2/jwks".formatted(closedLocalPort());
+        return new WebApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(ResourceServerSecurityAutoConfiguration.class))
+                .withUserConfiguration(WebConfiguration.class)
+                .withBean(JwtDecoder.class, () -> NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build());
+    }
+
+    private static int closedLocalPort() throws IOException {
+        try (ServerSocket socket = new ServerSocket(0)) {
+            return socket.getLocalPort();
+        }
     }
 
     @Test
@@ -82,6 +105,31 @@ class ResourceServerSecurityAutoConfigurationTest {
     void shouldAnswer401WhenTheTokenWasSignedByAnotherIssuer() {
         withMockMvc(mockMvc -> mockMvc.perform(bearer(get("/guarded"), new TestJwtIssuer().token(REPORTER_ROLE)))
                 .andExpect(status().isUnauthorized()));
+    }
+
+    @Test
+    @DisplayName("Should answer 503 when the signing keys of the issuer cannot be fetched")
+    void shouldAnswer503WhenTheSigningKeysOfTheIssuerCannotBeFetched() throws Exception {
+        withMockMvc(runnerWithUnreachableSigningKeys(), mockMvc -> mockMvc
+                .perform(bearer(get("/guarded"), issuer.token(REPORTER_ROLE)))
+                .andExpect(status().isServiceUnavailable()));
+    }
+
+    @Test
+    @DisplayName("Should answer 503 to a state-changing request with a Bearer token when the keys cannot be fetched")
+    void shouldAnswer503ToAStateChangingRequestWhenTheKeysCannotBeFetched() throws Exception {
+        withMockMvc(runnerWithUnreachableSigningKeys(), mockMvc -> mockMvc
+                .perform(bearer(post("/guarded"), issuer.token(REPORTER_ROLE)))
+                .andExpect(status().isServiceUnavailable()));
+    }
+
+    @Test
+    @DisplayName("Should keep answering 401 when the keys are unreachable but there is no token, or it is no JWT")
+    void shouldKeepAnswering401WhenTheKeysAreUnreachableButThereIsNoUsableToken() throws Exception {
+        withMockMvc(runnerWithUnreachableSigningKeys(), mockMvc -> {
+            mockMvc.perform(get("/guarded")).andExpect(status().isUnauthorized());
+            mockMvc.perform(bearer(get("/guarded"), "not-a-jwt")).andExpect(status().isUnauthorized());
+        });
     }
 
     @Test
