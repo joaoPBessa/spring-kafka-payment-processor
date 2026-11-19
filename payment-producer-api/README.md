@@ -136,7 +136,7 @@ The Kafka template is observed, so the trace context travels to the consumer in 
 
 ## Testing
 
-- **Slice tests** (`@WebMvcTest`) for both controllers: `AccountControllerTest`, `PaymentControllerTest`, and `AccessControlTest`, which checks every endpoint against every role (no token, bad tokens, wrong or missing role, the right role, the 403 error format). They authenticate with tokens signed by the `TestJwtIssuer` from `common-libraries`, so no authorization server is needed.
+- **Slice tests** (`@WebMvcTest`) for both controllers: `AccountControllerTest`, `PaymentControllerTest`, `AccessControlTest`, which checks every endpoint against every role (no token, bad tokens, wrong or missing role, the right role, the 403 error format), and `FrameworkErrorsTest` (an unknown path, a method or media type the endpoint does not support answer 404, 405 and 415 instead of 500). They authenticate with tokens signed by the `TestJwtIssuer` from `common-libraries`, so no authorization server is needed.
 - **Unit tests**: `AccountServiceTest`, `PaymentServiceTest` — plain Mockito, no Spring context.
 - **Integration tests**: `PaymentProducerApiApplicationTests` boots the full context against Testcontainers-managed Kafka, Redis, Zipkin and Apicurio containers (the registry URL reaches the context through a `DynamicPropertyRegistrar`, so the dynamic port is wired automatically); `PaymentPublishingIntegrationTest` publishes over real HTTP (with a token) and confirms the exact Avro event round-trips through a real Kafka broker and Apicurio Registry, and that the secured endpoints refuse callers without a token, from another issuer or without the role, while the health stays open and the metrics need `METRICS_READ`.
 
